@@ -2,22 +2,22 @@
 #include <Adafruit_NeoPixel.h>
 
 // ---------- HW-KONFIG ----------
-// ADVARSEL: 250 LEDs ved BRIGHTNESS 100 trekker ~1.5A (rød/oransje).
+// ADVARSEL: 263 LEDs ved BRIGHTNESS 100 trekker ~1.6A (rød/oransje).
 // Full hvit ved 255 = ~15A. Bruk ekstern 5V strømforsyning!
 #define PIN        22
-#define NUM_PIXELS 250
+#define NUM_PIXELS 263
 // 0-255. 0 = av, 255 = maks. Anbefalt maks 100 uten kraftig PSU.
 #define BRIGHTNESS 100
 
-static_assert(NUM_PIXELS >= 250, "NUM_PIXELS er for lavt");
+static_assert(NUM_PIXELS >= 263, "NUM_PIXELS er for lavt");
 
 Adafruit_NeoPixel strip(NUM_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
 // ---------- Sylinder-geometri ----------
 // Ror: OD 32 mm, ledningsspor spiralviklet
-const uint8_t  RINGS         = 10;   // 10 rotasjoner rundt sylinderen
-const uint8_t  LEDS_PER_RING = 25;   // 10 * 25 = 250
-const uint16_t USED_LEDS     = (uint16_t)RINGS * LEDS_PER_RING; // 250
+// 17 rotasjoner: 8 ringer × 16 LEDs + 9 ringer × 15 LEDs = 263 totalt
+const uint8_t  RINGS         = 17;
+const uint16_t USED_LEDS     = 263;
 
 static_assert(USED_LEDS <= NUM_PIXELS, "USED_LEDS overstiger NUM_PIXELS");
 
@@ -27,15 +27,15 @@ static_assert(USED_LEDS <= NUM_PIXELS, "USED_LEDS overstiger NUM_PIXELS");
 #define FRAMES_PER_SECOND 60
 #define FRAME_MS (1000 / FRAMES_PER_SECOND)
 
-// Gnistsone: overste 1/4 av hoyden
-static const uint8_t SPARK_ZONE = LEDS_PER_RING / 4;
+// Gnistsone: overste 1/4 av hoyden (basert på gjennomsnittlig LED-er per ring)
+static const uint8_t SPARK_ZONE = 4;  // ~1/4 av 15-16 LEDs
 
 // Terskelgrenser for HeatColor8
 static const uint8_t HEAT_HIGH = 0x80;
 static const uint8_t HEAT_MID  = 0x40;
 
-// Hoydeprofil for flamme (langs sylinderen)
-uint8_t g_heat[LEDS_PER_RING];
+// Hoydeprofil for flamme (langs sylinderen) - maks 16 LEDs per ring
+uint8_t g_heat[16];
 
 // Fade-niva per ring (0-255)
 uint8_t g_ringFade[RINGS];
@@ -60,6 +60,7 @@ uint16_t XY(uint8_t ring, uint8_t y);
 float flickerFactorForRing(int8_t ring, uint8_t activeRings);
 void clearStrip();
 uint8_t calcActiveRings(float t);
+uint8_t getLedsForRing(uint8_t ring);
 
 // ================== SETUP ==================
 void setup() {
@@ -122,12 +123,14 @@ void loop() {
     for (uint8_t ring = 0; ring < RINGS; ring++) {
       uint8_t fade = g_ringFade[ring];
       float flickerFactor = flickerFactorForRing(ring, activeRings);
+      uint8_t ledsInRing = getLedsForRing(ring);
 
-      for (uint8_t y = 0; y < LEDS_PER_RING; y++) {
+      for (uint8_t y = 0; y < ledsInRing; y++) {
         uint32_t color = 0;
 
         if (fade > 0) {
-          uint8_t h = g_heat[y];
+          // Bruk heat-verdi scaled til denne ringens oppløsning
+          uint8_t h = g_heat[(y * 16) / ledsInRing];
 
           uint8_t smoothed = h;
           if (flickerFactor < 1.0f) {
@@ -180,12 +183,12 @@ void clearStrip() {
 
 // ---------- Fire2012 langs hoyden ----------
 void FireStep() {
-  for (int i = 0; i < LEDS_PER_RING; i++) {
-    uint8_t cooldown = random(0, ((COOLING * 10) / LEDS_PER_RING) + 2);
+  for (int i = 0; i < 16; i++) {
+    uint8_t cooldown = random(0, ((COOLING * 10) / 16) + 2);
     g_heat[i] = (cooldown > g_heat[i]) ? 0 : g_heat[i] - cooldown;
   }
 
-  for (int k = LEDS_PER_RING - 1; k >= 2; k--) {
+  for (int k = 15; k >= 2; k--) {
     g_heat[k] = (g_heat[k - 1] + g_heat[k - 2] + g_heat[k - 2]) / 3;
   }
 
@@ -221,16 +224,32 @@ uint32_t HeatColor8(uint8_t temperature) {
   return strip.Color(r, g, b);
 }
 
+// ---------- Hent antall LEDs for en gitt ring ----------
+uint8_t getLedsForRing(uint8_t ring) {
+  if (ring < 8) {
+    return 16;  // Første 8 ringer: 16 LEDs hver
+  } else {
+    return 15;  // Siste 9 ringer: 15 LEDs hver
+  }
+}
+
 // ---------- Mapping: ring/y -> LED-index ----------
 uint16_t XY(uint8_t ring, uint8_t y) {
-  if (ring >= RINGS || y >= LEDS_PER_RING) return UINT16_MAX;
+  if (ring >= RINGS) return UINT16_MAX;
+  
+  uint8_t ledsThisRing = getLedsForRing(ring);
+  if (y >= ledsThisRing) return UINT16_MAX;
 
-  uint16_t base = (uint16_t)ring * LEDS_PER_RING;
+  // Beregn base-indeks (hvor denne ringen starter)
+  uint16_t base = 0;
+  for (uint8_t r = 0; r < ring; r++) {
+    base += getLedsForRing(r);
+  }
 
-  // serpentin: annenhver ring snur retning
+  // Serpentin: annenhver ring snur retning
   return (ring % 2 == 0)
     ? base + y
-    : base + (LEDS_PER_RING - 1 - y);
+    : base + (ledsThisRing - 1 - y);
 }
 
 // ---------- Flimmer-demping per ring ----------
