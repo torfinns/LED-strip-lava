@@ -15,7 +15,11 @@ c) Orange (til ferdig)
 - Etter 3x4 + 2x 4,5 = 21 s: alle LED / power orange
 - 40s: Alle mørke
 
-
+Rekapitulering:
+-BRUK 3s på alle 263 LEDs. De skal starte som mørk røde, blafre opp langs sylinderen i lineære bevegelser som glødende lava i rødt / orange på tur opp langs sylinderen
+-Etter 4,5 s start et glidende fargeskift (som simulerer stadig varmere metall) fra mørk rødt til mørk orange. Bruk ca 9s på overgangen fra mørk rød til mørk orange. Gå innom lysere rød og de nærliggende nyansene på veien.
+-Når alle LEDs er mørk orange skal de likevel gløde som lava rundt nyanser i rødt og orange
+-Etter 40s: Alle mørke igjen
 
 Rotated RGB LED strip controlled by M5Atom for lava / burning effect
 
