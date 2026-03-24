@@ -9,11 +9,11 @@ a) Mørk rød (4,5s)
 b) Lys rød (4,5s)
 c) Orange (til ferdig)
 6. Blafring:
-– Lineær, ikke sirkulær
+- Lineær, ikke sirkulær
 - Lava-effekt / gløde-effekt
 8. Timing:
-– Etter 3x4 + 2x 4,5 = 21 s: alle LED / power orange
-– 40s: Alle mørke
+- Etter 3x4 + 2x 4,5 = 21 s: alle LED / power orange
+- 40s: Alle mørke
 
 
 
