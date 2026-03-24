@@ -1,4 +1,22 @@
 # LED-strip-lava
+
+RULES:
+1. BRUK 3S på alle 263 LEDs. De skal blafre
+2. Send ut TTL signal til neste modul
+3. Etter 4,5 s start fargeskift
+4. Fargeskift: (gradvis / mange nyanser)
+a) Mørk rød (4,5s)
+b) Lys rød (4,5s)
+c) Orange (til ferdig)
+6. Blafring:
+– Lineær, ikke sirkulær
+- Lava-effekt / gløde-effekt
+8. Timing:
+– Etter 3x4 + 2x 4,5 = 21 s: alle LED / power orange
+– 40s: Alle mørke
+
+
+
 Rotated RGB LED strip controlled by M5Atom for lava / burning effect
 
 Setup, installation, board selection and libraries:
