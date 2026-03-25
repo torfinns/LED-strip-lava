@@ -2,10 +2,11 @@
 
 TODO:
 1. Print toppanel
-2. Koble PeliCase
-3. Skjema for Tool Upper
-4. Implementer logikken for sekvensiell styring
-5. Koble opp det vi har for demo
+2. Koble kabler
+3. Koble PeliCase
+4. Skjema for Tool Upper
+5. Implementer logikken for sekvensiell styring
+6. Koble opp det vi har for demo
 
 
 RULES:
