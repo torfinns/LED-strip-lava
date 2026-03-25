@@ -1,5 +1,13 @@
 # LED-strip-lava
 
+TODO:
+-Print toppanel
+-Koble PeliCase
+-Skjema for Tool Upper
+-Implementer logikken for sekvensiell styring
+-Koble opp det vi har for demo
+
+
 RULES:
 1. BRUK 3S på alle 263 LEDs. De skal blafre
 2. Send ut TTL signal til neste modul
