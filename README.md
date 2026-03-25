@@ -1,11 +1,11 @@
 # LED-strip-lava
 
 TODO:
--Print toppanel
--Koble PeliCase
--Skjema for Tool Upper
--Implementer logikken for sekvensiell styring
--Koble opp det vi har for demo
+1. Print toppanel
+2. Koble PeliCase
+3. Skjema for Tool Upper
+4. Implementer logikken for sekvensiell styring
+5. Koble opp det vi har for demo
 
 
 RULES:
