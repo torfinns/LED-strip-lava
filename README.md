@@ -1,101 +1,153 @@
 # LED-strip-lava
 
-RGB LED-strip kontrollert av M5Atom Lite for lava/branneffekt. Brukes i RS700 Demo-installasjon med fire moduler i rekke, synkronisert via TTL-signaler.
+RGB LED strip controlled by M5Atom Lite for lava/fire effect. Used in the RS700 Demo installation with four modules in series, synchronized via TTL signals.
 
 ---
 
-## Oppsett, installasjon, kortvalgog biblioteker
+## TODO
 
-### Arduino IDE 2.x – ESP32-støtte
+### Pending robustification measures
 
-1. Åpne **File → Preferences**.
-2. I feltet "Additional Boards Manager URLs", legg til:
+| Measure | Type | Risk | Interferes with code |
+|---|---|---|---|
+| Debounce on falling edge | SW | None | Minimal change, one line |
+| RC filter 100 Ω + 100 nF on TTL_IN_PIN | HW | None | No |
+| External 10 kΩ pullup to 3.3 V | HW | None | No |
+
+### Debounce fix — falling edge (TTL IN)
+
+Add `lastTtlHandledEventMs = now` on falling edge. Currently this timestamp is only updated on rising edge, leaving falling edge unprotected against noise and contact bounce.
+
+Location: TTL IN handling block in `loop()`, approximately **line 272**.
+
+Current code:
+```cpp
+if (!level) {
+  // FALLING: active pulse starts
+  if (now - lastTtlHandledEventMs >= TTL_DEBOUNCE_MS) {
+    ttlMeasuredActive = true;
+    ttlActiveStartMs  = now;
+  }
+}
+```
+
+Fixed — add one line:
+```cpp
+if (!level) {
+  // FALLING: active pulse starts
+  if (now - lastTtlHandledEventMs >= TTL_DEBOUNCE_MS) {
+    ttlMeasuredActive     = true;
+    ttlActiveStartMs      = now;
+    lastTtlHandledEventMs = now;  // <-- add this line
+  }
+}
+```
+
+---
+
+## Setup, installation, board selection and libraries
+
+### Arduino IDE 2.x – ESP32 support
+
+1. Open **File → Preferences**.
+2. In "Additional Boards Manager URLs" add:
    `https://espressif.github.io/arduino-esp32/package_esp32_index.json`
-3. Gå til **Tools → Board → Boards Manager…**, søk etter "esp32" og installer **ESP32 by Espressif Systems**.
-4. Velg kort: **Tools → Board → ESP32 Arduino → M5Stack-ATOM**.
-5. Velg port: **Tools → Port → COMxx** (eller aktuell port).
-6. Sett **Tools → Upload Speed → 115200** for stabil opplasting.
+3. Go to **Tools → Board → Boards Manager…**, search for "esp32" and install **ESP32 by Espressif Systems**.
+4. Select board: **Tools → Board → ESP32 Arduino → M5Stack-ATOM**.
+5. Select port: **Tools → Port → COMxx** (whichever port the Atom is on).
+6. Set **Tools → Upload Speed → 115200** for reliable uploads.
 
-### Påkrevde biblioteker
+### Required libraries
 
-I **Sketch → Include Library → Manage Libraries…**:
+In **Sketch → Include Library → Manage Libraries…**:
 
-- **Adafruit NeoPixel** – for LED-stripen
-- **M5Atom** – for Atom Lite-knapp og intern LED
+- **Adafruit NeoPixel** – for the LED strip
+- **M5Atom** – for the Atom Lite button and internal LED
 
 ---
 
-## Fysisk tilkobling
+## Physical wiring
 
-**Kort:** M5Stack Atom Lite (ESP32‑PICO‑D4)
+**Board:** M5Stack Atom Lite (ESP32‑PICO‑D4)
 
-**LED-strip:** 263 adresserbare RGB-LEDs fordelt på 17 ringer (ring 0–7: 16 LEDs, ring 8–16: 15 LEDs)
+**LED strip:** 263 addressable RGB LEDs arranged in 17 rings (rings 0–7: 16 LEDs each, rings 8–16: 15 LEDs each)
 
-| Signal | GPIO | Kabel |
+| Signal | GPIO | Note |
 |---|---|---|
-| LED data | 22 | Hvit JST |
-| GND | GND | Svart JST |
-| 5V | 5V | Separat 5V forsyning anbefalt ved full lysstyrke |
-| TTL ut | 19 | Aktiv LOW, hvile HIGH |
-| TTL inn | 21 | Aktiv LOW, intern pullup, INPUT_PULLUP |
+| LED data | 22 | White JST wire |
+| GND | GND | Black JST wire |
+| 5V | 5V | Separate 5 V supply recommended at full brightness |
+| TTL out | 19 | Active LOW, idle HIGH |
+| TTL in | 21 | Active LOW, INPUT_PULLUP |
 
-**Merk:** Felles GND mellom alle moduler er påkrevd for korrekt TTL-kommunikasjon.
+**Note:** A common GND between all modules is required for correct TTL communication.
 
 ---
 
-## TTL-protokoll (modulsynkronisering)
+## Ignite button
 
-Fire moduler kobles i rekke. Modul 1 er master og sender TTL-pulser til etterfølgende moduler.
+| Action | Duration | Result |
+|---|---|---|
+| Short press | < 1000 ms | START sequence (from OFF or DONE only) |
+| Long press | ≥ 1000 ms | STOP sequence (from PLAYING only) |
 
-| Pulsbredde | Betydning |
+Debounce between button events: 500 ms. STOP triggers a 5-second fade-out before the system enters DONE state.
+
+---
+
+## TTL protocol (module synchronization)
+
+Four modules are connected in series. Module 1 is master and sends TTL pulses to downstream modules.
+
+| Pulse width | Meaning |
 |---|---|
-| < 1000 ms LOW | START-signal |
-| ≥ 1000 ms LOW | STOPP-signal |
+| < 1000 ms LOW | START |
+| ≥ 1000 ms LOW | STOP |
 
-- Hvile: HIGH
-- Aktiv: LOW
-- Debounce: 50 ms (falling og rising edge)
+- Idle: HIGH
+- Active: LOW
+- Debounce: 50 ms (falling and rising edge)
 
 ---
 
 ## RS700 Cylinder Fire Effect
 
-### Opprinnelse
+### Origin
 
-Algoritmen er basert på **Fire2012** av Mark Kriegsman (FastLED-prosjektet):
-- Kode: https://github.com/FastLED/FastLED/blob/master/examples/Fire2012/Fire2012.ino
-- Artikkel: https://blog.kriegsman.org/2014/04/04/fire2012-an-open-source-fire-simulation-for-arduino-and-leds/
+The algorithm is based on **Fire2012** by Mark Kriegsman (FastLED project):
+- Code: https://github.com/FastLED/FastLED/blob/master/examples/Fire2012/Fire2012.ino
+- Article: https://blog.kriegsman.org/2014/04/04/fire2012-an-open-source-fire-simulation-for-arduino-and-leds/
 
-Fra Fire2012 er følgende beholdt konseptuelt:
-- `heat[]`-array langs vertikal akse
-- Tre-stegs per-frame-logikk: **COOLING → HEAT DIFFUSION → SPARKING**
-- `COOLING`- og `SPARKING`-parametere
+The following is retained from Fire2012 conceptually:
+- `heat[]` array along the vertical axis
+- Three-step per-frame logic: **COOLING → HEAT DIFFUSION → SPARKING**
+- `COOLING` and `SPARKING` parameters
 
-Implementasjonen er ellers skrevet fra bunnen av og benytter **Adafruit NeoPixel** i stedet for FastLED. `qsub8`/`qadd8`/`random8` er de eneste FastLED-hjelpefunksjonene som er beholdt direkte.
+The rest of the implementation is written from scratch using **Adafruit NeoPixel** instead of FastLED. `qsub8`, `qadd8`, and `random8` are the only FastLED helper functions retained directly.
 
-### Geometri
+### Geometry
 
-Stripen behandles som en sylinder med 17 ringer. En `FLAME_XY(ring, col)`-funksjon mapper (ring, kolonne) til lineær LED-indeks. Ringen bruker ikke serpentine-mapping — alle ringer er adressert lineært fra `ringBase(ring)`.
+The strip is treated as a cylinder with 17 rings. `FLAME_XY(ring, col)` maps (ring, column) to a linear LED index. No serpentine mapping — all rings are addressed linearly from `ringBase(ring)`.
 
-### Animasjonssekvens
+### Animation sequence
 
-| Fase | Tid | Beskrivelse |
+| Phase | Time | Description |
 |---|---|---|
-| Fill | 0 – 10 s | Ilden fyller sylinderen ring for ring nedenfra og opp |
-| Full flame | 10 – 16 s | Full branneffekt med COOLING=40, SPARKING=120 |
-| Color shift | 16 – 30 s | Fargen blender fra mørk rød → oransje via smoothstep |
-| Blend to glow | 30 – 36 s | Brannalgoritmen fases ut, lavaflimmer fases inn |
-| Lava glow | 36 s – | Stasjonær lavaglød med sinusbasert pulsering |
-| All off | 300 s | Sekvensen stoppes automatisk |
+| Fill | 0 – 10 s | Fire fills the cylinder ring by ring, bottom to top |
+| Full flame | 10 – 16 s | Full fire effect, COOLING=40, SPARKING=120 |
+| Color shift | 16 – 30 s | Color blends from dark red → orange via smoothstep |
+| Blend to glow | 30 – 36 s | Fire algorithm fades out, lava flicker fades in |
+| Lava glow | 36 s – | Steady lava glow with sine-based brightness pulsing |
+| All off | 300 s | Sequence stops automatically |
 
-### Modifikasjoner fra Fire2012
+### Modifications from Fire2012
 
-- Portert fra FastLED til Adafruit_NeoPixel
-- 2D kolonne-basert `heat[FIRE_COLS][RINGS]` i stedet for 1D
-- Per-kolonne `colOffset[]` og `colRotation[]` for organisk variasjon
-- Egendefinert `heatToColor()` med rød/oransje lavapalett i stedet for FastLEDs `HeatColors`
-- `lavaFlicker()` — deterministisk pseudorandom glødeffekt basert på LED-indeks og tid
-- `baseColorForTime()` — tidsstyrt fargepalettskift via smoothstep-interpolasjon
-- `fadeScale` — global nedtoning ved FADING-tilstand
-- TTL inn/ut med ISR og debounce for multi-modul synkronisering
-- Knapp: kort trykk = START, langt trykk (≥ 1 s) = STOPP
+- Ported from FastLED to Adafruit_NeoPixel
+- 2D column-based `heat[FIRE_COLS][RINGS]` instead of 1D
+- Per-column `colOffset[]` and `colRotation[]` for organic variation
+- Custom `heatToColor()` with red/orange lava palette instead of FastLED's `HeatColors`
+- `lavaFlicker()` — deterministic pseudorandom glow effect based on LED index and time
+- `baseColorForTime()` — time-driven color palette shift via smoothstep interpolation
+- `fadeScale` — global brightness ramp-down during FADING state
+- TTL in/out with ISR and debounce for multi-module synchronization
+- Button: short press = START, long press (≥ 1 s) = STOP
