@@ -21,6 +21,10 @@
 //     proporsjonalt: FILL_DURATION_SEC 10->5, FULL_FLAME_END_SEC 16->8,
 //     FADE_END_SEC 30->15, BLEND_DURATION 6->3, og TTL_START_PULSE_SEC-
 //     offset 1.0s->0.5s for å holde samme relative posisjon (se ENDRING R2.0-4)
+//   - Fikset DEMO-fargen: heatToColor() er tunet for ild (blått ~0), og ga
+//     mørk/feil farge på lilla siden blått er hovedkanalen der. Ny
+//     heatToColorUniform() skalerer alle kanaler proporsjonalt, brukt kun
+//     for DEMO (se ENDRING R2.0-5)
 // =====================================================
 
 #define FW_VERSION "RS700_Demo_Rev2_0"
@@ -208,6 +212,15 @@ uint32_t heatToColor(uint8_t temperature, uint8_t baseR, uint8_t baseG, uint8_t 
   }
 
   return strip.Color(r, g, b);
+}
+
+// heatToColor() antar en ild-palett der blått er ~0 (undertrykker b under 40%
+// varme). DEMO-lilla har blått som dominerende kanal, så den paletten gir feil
+// (mørk/rødbrun) farge. Bruk proporsjonal skalering av alle kanaler i stedet
+// (se ENDRING R2.0-5).
+uint32_t heatToColorUniform(uint8_t temperature, uint8_t baseR, uint8_t baseG, uint8_t baseB) {
+  float f = temperature / 255.0f;
+  return strip.Color((uint8_t)(baseR * f), (uint8_t)(baseG * f), (uint8_t)(baseB * f));
 }
 
 uint32_t lavaFlicker(uint8_t baseR, uint8_t baseG, uint8_t baseB,
@@ -599,7 +612,9 @@ void loop() {
           lerpU8(fb, gb, glowBlend)
         );
       } else {
-        color = heatToColor(heat[fc][ring], baseR, baseG, baseB);
+        color = demoActive
+          ? heatToColorUniform(heat[fc][ring], baseR, baseG, baseB)  // ENDRING R2.0-5
+          : heatToColor(heat[fc][ring], baseR, baseG, baseB);
       }
 
       strip.setPixelColor(idx, color);

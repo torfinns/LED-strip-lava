@@ -27,12 +27,13 @@ The previous contents of this branch (the pre-production sketches `Led_strip_lav
 
 | ID | Change | Status |
 |---|---|---|
-| R2.0-1 | Debounce on **both edges** of TTL IN. Originally only the falling edge was protected; a code review found the rising edge (pulse end) had no debounce at all, so a noise glitch shortly after a genuine falling edge could end the width measurement early. Fixed by requiring 50 ms of quiet since the last edge (either direction) before any edge is acted on | Done, untested on hardware |
-| R2.0-2 | New **DEMO mode**: long press (≥ 1000 ms) from OFF/DONE ignites all modules instantly in purple (`#9255C0`, Interwell's lightest purple), skipping the sequential fill — reuses the existing Fire2012 flicker in its "full flame" state. No timeout; stopped the same way as PLAYING, with a long press (same 5 s fade-out) | Done, untested on hardware |
-| R2.0-3 | `NUM_PIXELS`/`USED_LEDS` raised from 263 to 272 (largest module seen so far), `getLedsForRing()` simplified to a flat 16/ring (272 = 17×16 exactly). One firmware image runs on modules with fewer physical LEDs — the NeoPixel chain simply doesn't deliver data past the last real LED, so a shorter module just has an incomplete outermost ring, nothing breaks | Done, untested on hardware |
-| R2.0-4 | Burn-up timeline halved proportionally: `FILL_DURATION_SEC` 10→5, `FULL_FLAME_END_SEC` 16→8, `FADE_END_SEC` 30→15, `BLEND_DURATION` 6→3. `TTL_START_PULSE_SEC`'s offset also scaled (1.0s→0.5s) to keep the inter-module trigger at the same relative point in the flame | Done, untested on hardware |
+| R2.0-1 | Debounce on **both edges** of TTL IN. Originally only the falling edge was protected; a code review found the rising edge (pulse end) had no debounce at all, so a noise glitch shortly after a genuine falling edge could end the width measurement early. Fixed by requiring 50 ms of quiet since the last edge (either direction) before any edge is acted on | Untested (no TTL hardware exercised yet) |
+| R2.0-2 | New **DEMO mode**: long press (≥ 1000 ms) from OFF/DONE ignites all modules instantly in purple (`#9255C0`, Interwell's lightest purple), skipping the sequential fill — reuses the existing Fire2012 flicker in its "full flame" state. No timeout; stopped the same way as PLAYING, with a long press (same 5 s fade-out) | Tested — see R2.0-5 |
+| R2.0-3 | `NUM_PIXELS`/`USED_LEDS` raised from 263 to 272 (largest module seen so far), `getLedsForRing()` simplified to a flat 16/ring (272 = 17×16 exactly). One firmware image runs on modules with fewer physical LEDs — the NeoPixel chain simply doesn't deliver data past the last real LED, so a shorter module just has an incomplete outermost ring, nothing breaks | Tested OK on hardware |
+| R2.0-4 | Burn-up timeline halved proportionally: `FILL_DURATION_SEC` 10→5, `FULL_FLAME_END_SEC` 16→8, `FADE_END_SEC` 30→15, `BLEND_DURATION` 6→3. `TTL_START_PULSE_SEC`'s offset also scaled (1.0s→0.5s) to keep the inter-module trigger at the same relative point in the flame | Tested OK on hardware |
+| R2.0-5 | Fixed DEMO's purple render: `heatToColor()` is tuned for a fire palette (blue held near 0), which produced a dark/wrong color when given a purple base whose blue channel dominates. Added `heatToColorUniform()` — scales all three channels proportionally with heat — used only for DEMO | Fix applied, needs hardware re-test |
 
-**Nothing in Rev 2.0 has been verified on hardware yet.**
+First hardware test (2026-08-17): button, normal ignition, LED count and halved timing all confirmed working. DEMO mode triggered but rendered the wrong color (see R2.0-5) — needs re-test.
 
 ---
 
