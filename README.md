@@ -27,13 +27,18 @@ The previous contents of this branch (the pre-production sketches `Led_strip_lav
 
 | ID | Change | Status |
 |---|---|---|
-| R2.0-1 | Debounce on **both edges** of TTL IN. Originally only the falling edge was protected; a code review found the rising edge (pulse end) had no debounce at all, so a noise glitch shortly after a genuine falling edge could end the width measurement early. Fixed by requiring 50 ms of quiet since the last edge (either direction) before any edge is acted on | Untested (no TTL hardware exercised yet) |
+| R2.0-1 | Debounce on **both edges** of TTL IN. Originally only the falling edge was protected; a code review found the rising edge (pulse end) had no debounce at all, so a noise glitch shortly after a genuine falling edge could end the width measurement early. Fixed by requiring 50 ms of quiet since the last edge (either direction) before any edge is acted on | Tested OK on hardware (TTL IN exercised via R2.0-8 testing) |
 | R2.0-2 | New **DEMO mode**: long press (≥ 1000 ms) from OFF/DONE ignites all modules instantly in purple (`#9255C0`, Interwell's lightest purple), skipping the sequential fill — reuses the existing Fire2012 flicker in its "full flame" state. No timeout; stopped the same way as PLAYING, with a long press (same 5 s fade-out) | Tested — see R2.0-5 |
 | R2.0-3 | `NUM_PIXELS`/`USED_LEDS` raised from 263 to 272 (largest module seen so far), `getLedsForRing()` simplified to a flat 16/ring (272 = 17×16 exactly). One firmware image runs on modules with fewer physical LEDs — the NeoPixel chain simply doesn't deliver data past the last real LED, so a shorter module just has an incomplete outermost ring, nothing breaks | Tested OK on hardware |
 | R2.0-4 | Burn-up timeline halved proportionally: `FILL_DURATION_SEC` 10→5, `FULL_FLAME_END_SEC` 16→8, `FADE_END_SEC` 30→15, `BLEND_DURATION` 6→3. `TTL_START_PULSE_SEC`'s offset also scaled (1.0s→0.5s) to keep the inter-module trigger at the same relative point in the flame | Tested OK on hardware |
-| R2.0-5 | Fixed DEMO's purple render: `heatToColor()` is tuned for a fire palette (blue held near 0), which produced a dark/wrong color when given a purple base whose blue channel dominates. Added `heatToColorUniform()` — scales all three channels proportionally with heat — used only for DEMO | Fix applied, needs hardware re-test |
+| R2.0-5 | Fixed DEMO's purple render: `heatToColor()` is tuned for a fire palette (blue held near 0), which produced a dark/wrong color when given a purple base whose blue channel dominates. Added `heatToColorUniform()` — scales all three channels proportionally with heat — used only for DEMO | Tested OK on hardware |
+| R2.0-6 | Fixed long-press re-arming: the button was re-armed based only on time since the last event (`BTN_DEBOUNCE_MS`), not on whether it had actually been physically released. A continuous hold of more than ~1.5s could trigger the long-press action multiple times in a row (e.g. start DEMO, then immediately stop it again) without the button ever being released. The action still fires the instant hold time crosses `ON_MAX_MS` while still held, but a `buttonLongActionFired` guard now blocks re-triggering until an actual release | Tested OK on hardware |
+| R2.0-7 | `lastButtonEventMs`/`lastTtlHandledEventMs` initialized to `-debounce_time` (intentional unsigned underflow) instead of `0`, so a press/pulse in the first few milliseconds after boot isn't silently dropped by the debounce check | Tested OK on hardware |
+| R2.0-8 | DEMO (start/stop on long press) was only wired to the M5Atom's onboard button (GPIO39), never to TTL IN. On modules where the physical test button is actually wired through TTL IN rather than GPIO39, DEMO could never trigger. The same long-press logic for DEMO is now mirrored in the TTL IN handling | Tested OK on hardware — this was the actual root cause of "DEMO never starts" |
+| R2.0-9 | DEMO now propagates to the next module in the TTL chain immediately on start/stop, mirroring the existing `beginStartPulseOut()`/`beginStopPulseOut()` pattern used for PLAYING/STOP — without this, only the module that received the trigger would enter DEMO, not the rest of the chain | Tested OK on hardware |
+| R2.0-10 | DEMO ran at full strip brightness with no dimming (unlike the sine-pulsed glow state in normal mode) and looked too intense. Added `DEMO_BRIGHTNESS_SCALE` (0.7) to dim DEMO specifically | Tested OK on hardware |
 
-First hardware test (2026-08-17): button, normal ignition, LED count and halved timing all confirmed working. DEMO mode triggered but rendered the wrong color (see R2.0-5) — needs re-test.
+First hardware test (2026-08-17): button, normal ignition, LED count and halved timing all confirmed working; DEMO mode did not trigger at all initially. Root-caused through several rounds (color bug, button re-arm bug, boot-window debounce bug) to R2.0-8: the physical test button on this rig is wired through TTL IN, not the onboard M5Atom button. All fixes above (R2.0-5 through R2.0-10) now confirmed working on hardware.
 
 ---
 
@@ -92,12 +97,14 @@ In **Sketch → Include Library → Manage Libraries…**:
 
 ## Ignite button
 
+Reachable via **either** the M5Atom's onboard button (GPIO39) **or** TTL IN (pin 21, active LOW) — both inputs are wired to the exact same state machine, so on rigs where the physical button is actually connected through TTL IN rather than GPIO39, everything below still applies.
+
 | Action | From mode | Result |
 |---|---|---|
 | Short press (< 1000 ms) | OFF / DONE | START sequence (normal red/orange burn-up) |
 | Long press (≥ 1000 ms) | PLAYING | STOP — 5 s fade-out, then DONE |
-| Long press (≥ 1000 ms) | OFF / DONE | **DEMO** — instant purple "full flame" on all modules, no timeout |
-| Long press (≥ 1000 ms) | DEMO | Stop DEMO — same 5 s fade-out, then DONE |
+| Long press (≥ 1000 ms) | OFF / DONE | **DEMO** — instant purple "full flame" on all modules, no timeout, propagated to the next module in the TTL chain |
+| Long press (≥ 1000 ms) | DEMO | Stop DEMO — same 5 s fade-out, then DONE, propagated to the next module |
 
 Any press while `FADING` or while already in the target mode has no effect. Debounce between button events: 500 ms. Long-press actions fire immediately once the hold crosses 1000 ms (not on release).
 
@@ -105,16 +112,19 @@ Any press while `FADING` or while already in the target mode has no effect. Debo
 
 ## TTL protocol (module synchronization)
 
-Four modules are connected in series. Module 1 is master and sends TTL pulses to downstream modules.
+Four modules are connected in series. Module 1 is master and sends TTL pulses to downstream modules. TTL IN drives the exact same state machine as the physical button (see [Ignite button](#ignite-button)) — including DEMO.
 
-| Pulse width | Meaning |
-|---|---|
-| < 1000 ms LOW | START |
-| ≥ 1000 ms LOW | STOP |
+| Pulse width | From mode | Meaning |
+|---|---|---|
+| < 1000 ms LOW | OFF / DONE | START |
+| ≥ 1000 ms LOW | PLAYING | STOP |
+| ≥ 1000 ms LOW | OFF / DONE | DEMO |
+| ≥ 1000 ms LOW | DEMO | Stop DEMO |
 
 - Idle: HIGH
 - Active: LOW
 - Debounce: 50 ms (falling and rising edge)
+- Long-pulse actions fire the instant held time crosses 1000 ms, not on release — mirroring the button
 
 ---
 
@@ -148,7 +158,7 @@ The strip is treated as a cylinder with 17 rings. `FLAME_XY(ring, col)` maps (ri
 | Lava glow | 18 s – | Steady lava glow with sine-based brightness pulsing |
 | All off | 300 s | Sequence stops automatically |
 
-**DEMO mode** (long press from OFF/DONE) skips this whole timeline: it locks into the "full flame" parameters permanently, recolored purple (`#9255C0`), with no color/glow progression and no auto-off — it stays until stopped with another long press.
+**DEMO mode** (long press from OFF/DONE, button or TTL IN) skips this whole timeline: it locks into the "full flame" parameters permanently, recolored purple (`#9255C0` at `DEMO_BRIGHTNESS_SCALE`), with no color/glow progression and no auto-off — it stays until stopped with another long press. Uses `heatToColorUniform()` rather than `heatToColor()` since the latter is fire-tuned and suppresses blue, the dominant channel in this purple.
 
 ### Modifications from Fire2012
 
@@ -156,8 +166,9 @@ The strip is treated as a cylinder with 17 rings. `FLAME_XY(ring, col)` maps (ri
 - 2D column-based `heat[FIRE_COLS][RINGS]` instead of 1D
 - Per-column `colOffset[]` and `colRotation[]` for organic variation
 - Custom `heatToColor()` with red/orange lava palette instead of FastLED's `HeatColors`
+- `heatToColorUniform()` — proportional (non-fire-biased) channel scaling, used only for DEMO's purple
 - `lavaFlicker()` — deterministic pseudorandom glow effect based on LED index and time
 - `baseColorForTime()` — time-driven color palette shift via smoothstep interpolation
 - `fadeScale` — global brightness ramp-down during FADING state
-- TTL in/out with ISR and debounce for multi-module synchronization
-- Button: short press = START, long press (≥ 1 s) = STOP
+- TTL in/out with ISR and debounce for multi-module synchronization, mirrored on the button
+- Button/TTL IN: short press = START, long press (≥ 1 s) = STOP or DEMO depending on mode

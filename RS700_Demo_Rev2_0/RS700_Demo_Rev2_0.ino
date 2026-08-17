@@ -25,6 +25,31 @@
 //     mørk/feil farge på lilla siden blått er hovedkanalen der. Ny
 //     heatToColorUniform() skalerer alle kanaler proporsjonalt, brukt kun
 //     for DEMO (se ENDRING R2.0-5)
+//   - Fikset langt-trykk-mekanikken: knappen ble re-armet basert kun på tid
+//     siden forrige hendelse (BTN_DEBOUNCE_MS), ikke på om et faktisk fysisk
+//     slipp hadde skjedd. Et sammenhengende trykk på over ca. 1.5s kunne
+//     dermed trigge langt-trykk-handlingen flere ganger på rad (f.eks. starte
+//     DEMO og umiddelbart stoppe den igjen) uten at knappen noensinne ble
+//     sluppet. Handlingen (start/stopp/DEMO) trigges fortsatt idet holdetiden
+//     krysser ON_MAX_MS mens knappen holdes nede, men buttonLongActionFired
+//     hindrer nå re-triggering før et faktisk slipp (se ENDRING R2.0-6)
+//   - lastButtonEventMs/lastTtlHandledEventMs initialisert til -debounce-tid
+//     (unsigned underflow, tilsiktet) i stedet for 0, slik at et trykk/puls
+//     i de aller første millisekundene etter boot ikke blir stille avvist
+//     av debounce-sjekken (se ENDRING R2.0-7)
+//   - DEMO-modus (start/stopp ved langt trykk) var kun koblet til M5Atom sin
+//     innebygde knapp (GPIO39), ikke til TTL IN. På moduler der den fysiske
+//     knappen faktisk er koblet via TTL IN, nådde DEMO-triggeren aldri fram.
+//     Samme langt-trykk-logikk for DEMO er nå lagt til TTL IN-håndteringen
+//     (se ENDRING R2.0-8)
+//   - DEMO propageres nå videre til neste modul i TTL-kjeden med en gang
+//     den starter/stopper (samme mønster som beginStartPulseOut()/
+//     beginStopPulseOut() allerede brukte for PLAYING/STOPP), slik at hele
+//     kjeden går i DEMO sammen, ikke bare modulen som mottok trykket
+//     (se ENDRING R2.0-9)
+//   - DEMO kjørte på full stripe-lysstyrke uten demping og ble for kraftig.
+//     Ny DEMO_BRIGHTNESS_SCALE (0.7) demper DEMO spesifikt, uavhengig av
+//     glød-pulseringen i vanlig modus (se ENDRING R2.0-10)
 // =====================================================
 
 #define FW_VERSION "RS700_Demo_Rev2_0"
@@ -40,6 +65,10 @@
 #define PIN        22
 #define NUM_PIXELS 272
 #define BRIGHTNESS 200
+
+// DEMO-modus: Interwells lyseste lilla, HEX #9255C0 (ENDRING R2.0-2)
+const uint8_t DEMOPURPLE_R   = 146, DEMOPURPLE_G   = 85, DEMOPURPLE_B   = 192;
+const float DEMO_BRIGHTNESS_SCALE = 0.7f; // 70%
 
 Adafruit_NeoPixel strip(NUM_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
@@ -92,9 +121,6 @@ const uint8_t DARKRED_R      = 120, DARKRED_G      =  0, DARKRED_B      = 0;
 const uint8_t MIDRED_R       = 220, MIDRED_G       = 20, MIDRED_B       = 0;
 const uint8_t DARKORANGE_R   = 255, DARKORANGE_G   = 85, DARKORANGE_B   = 0;
 
-// DEMO-modus: Interwells lyseste lilla, HEX #9255C0 (ENDRING R2.0-2)
-const uint8_t DEMOPURPLE_R   = 146, DEMOPURPLE_G   = 85, DEMOPURPLE_B   = 192;
-
 #define COOLING  40
 #define SPARKING 120
 
@@ -110,9 +136,16 @@ uint32_t lastFrameMs   = 0;
 uint32_t fadeStartMs   = 0;
 
 // Knapp
-bool     buttonPressed     = false;
-uint32_t buttonPressStart  = 0;
-uint32_t lastButtonEventMs = 0;
+bool     buttonPressed        = false;
+uint32_t buttonPressStart     = 0;
+bool     buttonLongActionFired = false;  // ENDRING R2.0-6: hindrer re-arming før faktisk slipp
+// ENDRING R2.0-7: initialisert til -BTN_DEBOUNCE_MS (unsigned underflow er
+// tilsiktet), ikke 0, slik at debounce-sjekken alltid slipper gjennom det
+// aller første trykket - selv om det skjer under de første BTN_DEBOUNCE_MS
+// millisekundene etter boot. Med 0 ville et trykk rett etter strøm på
+// kunne bli stille avvist siden millis() ennå ikke hadde rukket forbi
+// debounce-vinduet.
+uint32_t lastButtonEventMs = 0 - BTN_DEBOUNCE_MS;
 
 // TTL OUT (aktiv LOW)
 bool     ttlStartPulseTriggered = false;
@@ -129,7 +162,8 @@ volatile bool ttlISRNewEdge = false;
 
 bool     ttlMeasuredActive     = false;
 uint32_t ttlActiveStartMs      = 0;
-uint32_t lastTtlHandledEventMs = 0;
+// ENDRING R2.0-7: samme boot-vindu-fiks som lastButtonEventMs, for TTL IN
+uint32_t lastTtlHandledEventMs = 0 - TTL_DEBOUNCE_MS;
 
 // Animasjon
 const uint8_t FIRE_COLS = 15;
@@ -305,17 +339,30 @@ void stopSequence() {
 }
 
 // DEMO-modus: full lilla flamme på alle moduler, ingen sekvensiell
-// antenning, ingen timeout. Kun knappestyrt (se ENDRING R2.0-2)
+// antenning, ingen timeout (se ENDRING R2.0-2)
 void startDemoSequence() {
   lastFrameMs = millis();
   mode        = DEMO;
 
   clearHeat();
   randomizeOffsets();
+
+  // ENDRING R2.0-9: propager til neste modul i TTL-kjeden med en gang.
+  // DEMO har ingen fyllingsfase å vente på (i motsetning til normal
+  // PLAYING, der pulsen først sendes når fyllingen er ferdig), så
+  // pulsen sendes umiddelbart her i stedet for i loop().
+  ttlStartPulseTriggered = false;
+  ttlStartPulseActive    = false;
+  ttlStopPulseTriggered  = false;
+  ttlStopPulseActive     = false;
+  digitalWrite(TTL_OUT_PIN, HIGH);  // hvile HIGH
+  beginStartPulseOut();
 }
 
 void stopDemoSequence() {
   if (mode != DEMO) return;
+
+  beginStopPulseOut();  // ENDRING R2.0-9: propager stopp til neste modul
 
   fadeStartMs = millis();
   mode        = DEMO_FADING;
@@ -366,18 +413,28 @@ void loop() {
   // -----------------------------------------------
   bool btnNow = M5.Btn.isPressed();
 
+  // ENDRING R2.0-6: langt-trykk-handlingen skal trigges idet holdetiden
+  // krysser ON_MAX_MS, MENS knappen fortsatt holdes nede (slipp er
+  // uvesentlig for om/når handlingen skjer). buttonLongActionFired hindrer
+  // at koden feilaktig re-armer og trigger på nytt basert kun på tid siden
+  // forrige hendelse (BTN_DEBOUNCE_MS) — den nullstilles kun ved et faktisk
+  // fysisk slipp. Uten denne vakten kunne et sammenhengende trykk på over
+  // ca. 1.5s trigge langt-trykk-handlingen flere ganger på rad (f.eks.
+  // starte DEMO og umiddelbart stoppe den igjen) uten at knappen
+  // noensinne ble sluppet.
   if (btnNow && !buttonPressed) {
     if (now - lastButtonEventMs >= BTN_DEBOUNCE_MS) {
-      buttonPressed    = true;
-      buttonPressStart = now;
+      buttonPressed          = true;
+      buttonPressStart       = now;
+      buttonLongActionFired  = false;
     }
   }
 
-  if (btnNow && buttonPressed) {
+  if (btnNow && buttonPressed && !buttonLongActionFired) {
     uint32_t dur = now - buttonPressStart;
     if (dur >= ON_MAX_MS) {
-      lastButtonEventMs = now;
-      buttonPressed     = false;
+      lastButtonEventMs      = now;
+      buttonLongActionFired  = true;
       if (mode == PLAYING) stopSequence();
       else if (mode == DEMO) stopDemoSequence();                    // ENDRING R2.0-2
       else if (mode == OFF || mode == DONE) startDemoSequence();    // ENDRING R2.0-2
@@ -386,8 +443,9 @@ void loop() {
 
   if (!btnNow && buttonPressed) {
     uint32_t dur = now - buttonPressStart;
-    lastButtonEventMs = now;
-    buttonPressed     = false;
+    lastButtonEventMs      = now;
+    buttonPressed          = false;
+    buttonLongActionFired  = false;
 
     if (dur < ON_MAX_MS) {
       if (mode == OFF || mode == DONE) startSequence();
@@ -440,6 +498,8 @@ void loop() {
       lastTtlHandledEventMs = now;
 
       if (mode == PLAYING) stopSequence();
+      else if (mode == DEMO) stopDemoSequence();                    // ENDRING R2.0-8
+      else if (mode == OFF || mode == DONE) startDemoSequence();    // ENDRING R2.0-8
     }
   }
 
@@ -562,7 +622,9 @@ void loop() {
   }
 
   float brightnessScale = 1.0f;
-  if (glowBlend >= 1.0f) {
+  if (demoActive) {
+    brightnessScale = DEMO_BRIGHTNESS_SCALE;  // ENDRING R2.0-10
+  } else if (glowBlend >= 1.0f) {
     float g1 = 0.5f + 0.5f * sinf(now * 0.0014f);
     float g2 = 0.5f + 0.5f * sinf(now * 0.00051f + 1.3f);
     brightnessScale = 0.50f + 0.50f * (0.6f * g1 + 0.4f * g2);
