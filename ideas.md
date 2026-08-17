@@ -1,3 +1,11 @@
+**STATUS — AUGUST 2026:**
+
+Production version 1 (`RS700_Demo_rev_6` on `main`) is **frozen** as of August 2026. Nothing in this file is to be implemented in that version.
+
+All ideas below are candidates for **RS700_Demo_Rev2_0** on the `Experiment` branch. Hardware ideas (LED density, diffusors) affect geometry constants in the sketch, so they land in Rev2_0 or later — never in v1.
+
+---
+
 **POSSIBLE IMPROVEMENTS:**
 
 **MORE LED DENSITY:**

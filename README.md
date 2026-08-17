@@ -4,7 +4,26 @@ RGB LED strip controlled by M5Atom Lite for lava/fire effect. Used in the RS700 
 
 ---
 
+## Version status — FROZEN (August 2026)
+
+**`RS700_Demo_rev_6` on `main` is Production version 1 and is frozen as of August 2026.**
+
+This is the code that runs in the deployed RS700 installation. It must not be modified. Any bug fix, robustification measure or feature — including the pending items in the TODO section below — goes into the next version, not into this one.
+
+| | Production v1 | Next version |
+|---|---|---|
+| Branch | `main` | `Experiment` |
+| Sketch | `RS700_Demo_rev_6` | `RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino` |
+| Status | Frozen, deployed | Under development |
+| Changes allowed | Documentation only | Yes |
+
+The split was made in **August 2026**. `main` is kept as the reference for what is physically installed, so a unit in the field can always be reflashed with exactly the code it shipped with. Development continues on the `Experiment` branch as **RS700_Demo_Rev2_0**.
+
+---
+
 ## TODO
+
+The measures below are **not** applied to Production v1 — they are carried into `RS700_Demo_Rev2_0` on the `Experiment` branch. They are kept here as the record of what was known-open at the time of the freeze.
 
 ### Pending robustification measures
 
