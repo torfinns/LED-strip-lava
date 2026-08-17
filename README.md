@@ -4,18 +4,17 @@ RGB LED strip controlled by M5Atom Lite for lava/fire effect. Used in the RS700 
 
 ---
 
-## Version status — this is the development branch
+## Version status
 
-**You are on `Experiment`. The active development version is `RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino`.**
+**`main` now ships `RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino` as the active production version**, tested and confirmed working on hardware (see "Changes in Rev 2.0" below). `Experiment` continues to be where new work happens before it's merged back here.
 
-| | Production v1 | Rev 2.0 (here) |
+| | Rev 2.0 (current production) | Production v1 (historical) |
 |---|---|---|
-| Branch | `main` | `Experiment` |
-| Sketch | `RS700_Demo_rev_6` | `RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino` |
-| Status | Frozen August 2026, deployed | Under development |
-| Changes allowed | Documentation only | Yes |
+| Sketch | `RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino` | `RS700_Demo_rev_6` |
+| Status | Active, on `main` | Frozen August 2026, tagged `v6-production-1` |
+| Changes allowed | Yes, on `Experiment` then merged in | No — kept as an untouched historical reference |
 
-Production version 1 was frozen in **August 2026** and is preserved unchanged on `main`, so a unit in the field can always be reflashed with exactly the code it shipped with. `RS700_Demo_rev_6` is also kept in this branch as the untouched baseline to diff Rev 2.0 against — **do not edit it here either**. All work goes into `RS700_Demo_Rev2_0/`.
+`RS700_Demo_rev_6` is kept in the repo unchanged as the frozen baseline Rev 2.0 was built from and diffed against — **do not edit it**. A unit already in the field can always be reflashed with exactly `v6-production-1` if needed.
 
 Note that Rev 2.0 uses a proper Arduino sketch folder (`RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino`) so it opens directly in the Arduino IDE, unlike the extensionless `RS700_Demo_rev_6`.
 
