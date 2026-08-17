@@ -4,63 +4,46 @@ RGB LED strip controlled by M5Atom Lite for lava/fire effect. Used in the RS700 
 
 ---
 
-## Version status — FROZEN (August 2026)
+## Version status — this is the development branch
 
-**`RS700_Demo_rev_6` on `main` is Production version 1 and is frozen as of August 2026.**
+**You are on `Experiment`. The active development version is `RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino`.**
 
-This is the code that runs in the deployed RS700 installation. It must not be modified. Any bug fix, robustification measure or feature — including the pending items in the TODO section below — goes into the next version, not into this one.
-
-| | Production v1 | Next version |
+| | Production v1 | Rev 2.0 (here) |
 |---|---|---|
 | Branch | `main` | `Experiment` |
 | Sketch | `RS700_Demo_rev_6` | `RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino` |
-| Status | Frozen, deployed | Under development |
+| Status | Frozen August 2026, deployed | Under development |
 | Changes allowed | Documentation only | Yes |
 
-The split was made in **August 2026**. `main` is kept as the reference for what is physically installed, so a unit in the field can always be reflashed with exactly the code it shipped with. Development continues on the `Experiment` branch as **RS700_Demo_Rev2_0**.
+Production version 1 was frozen in **August 2026** and is preserved unchanged on `main`, so a unit in the field can always be reflashed with exactly the code it shipped with. `RS700_Demo_rev_6` is also kept in this branch as the untouched baseline to diff Rev 2.0 against — **do not edit it here either**. All work goes into `RS700_Demo_Rev2_0/`.
+
+Note that Rev 2.0 uses a proper Arduino sketch folder (`RS700_Demo_Rev2_0/RS700_Demo_Rev2_0.ino`) so it opens directly in the Arduino IDE, unlike the extensionless `RS700_Demo_rev_6`.
+
+The previous contents of this branch (the pre-production sketches `Led_strip_lava_v3.ino`, `Led_strip_lava_v5.ino`, `RS700_Demo_1.ino`, `RS700_Demo_2.ino`) are preserved in the tag **`experiment-legacy-2026-04`**.
+
+---
+
+## Changes in Rev 2.0
+
+| ID | Change | Status |
+|---|---|---|
+| R2.0-1 | Debounce on falling edge (TTL IN) — `lastTtlHandledEventMs = now` added in the FALLING branch, which previously left the falling edge unprotected against noise and contact bounce | Done, untested on hardware |
+
+**Nothing in Rev 2.0 has been verified on hardware yet.**
 
 ---
 
 ## TODO
 
-The measures below are **not** applied to Production v1 — they are carried into `RS700_Demo_Rev2_0` on the `Experiment` branch. They are kept here as the record of what was known-open at the time of the freeze.
-
 ### Pending robustification measures
 
-| Measure | Type | Risk | Interferes with code |
-|---|---|---|---|
-| Debounce on falling edge | SW | None | Minimal change, one line |
-| RC filter 100 Ω + 100 nF on TTL_IN_PIN | HW | None | No |
-| External 10 kΩ pullup to 3.3 V | HW | None | No |
+| Measure | Type | Risk | Interferes with code | Status |
+|---|---|---|---|---|
+| Debounce on falling edge | SW | None | Minimal change, one line | Done in Rev 2.0 (R2.0-1) |
+| RC filter 100 Ω + 100 nF on TTL_IN_PIN | HW | None | No | Open |
+| External 10 kΩ pullup to 3.3 V | HW | None | No | Open |
 
-### Debounce fix — falling edge (TTL IN)
-
-Add `lastTtlHandledEventMs = now` on falling edge. Currently this timestamp is only updated on rising edge, leaving falling edge unprotected against noise and contact bounce.
-
-Location: TTL IN handling block in `loop()`, approximately **line 272**.
-
-Current code:
-```cpp
-if (!level) {
-  // FALLING: active pulse starts
-  if (now - lastTtlHandledEventMs >= TTL_DEBOUNCE_MS) {
-    ttlMeasuredActive = true;
-    ttlActiveStartMs  = now;
-  }
-}
-```
-
-Fixed — add one line:
-```cpp
-if (!level) {
-  // FALLING: active pulse starts
-  if (now - lastTtlHandledEventMs >= TTL_DEBOUNCE_MS) {
-    ttlMeasuredActive     = true;
-    ttlActiveStartMs      = now;
-    lastTtlHandledEventMs = now;  // <-- add this line
-  }
-}
-```
+See [ideas.md](ideas.md) for hardware and effect ideas queued for this version.
 
 ---
 
