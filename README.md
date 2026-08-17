@@ -27,7 +27,10 @@ The previous contents of this branch (the pre-production sketches `Led_strip_lav
 
 | ID | Change | Status |
 |---|---|---|
-| R2.0-1 | Debounce on falling edge (TTL IN) — `lastTtlHandledEventMs = now` added in the FALLING branch, which previously left the falling edge unprotected against noise and contact bounce | Done, untested on hardware |
+| R2.0-1 | Debounce on **both edges** of TTL IN. Originally only the falling edge was protected; a code review found the rising edge (pulse end) had no debounce at all, so a noise glitch shortly after a genuine falling edge could end the width measurement early. Fixed by requiring 50 ms of quiet since the last edge (either direction) before any edge is acted on | Done, untested on hardware |
+| R2.0-2 | New **DEMO mode**: long press (≥ 1000 ms) from OFF/DONE ignites all modules instantly in purple (`#9255C0`, Interwell's lightest purple), skipping the sequential fill — reuses the existing Fire2012 flicker in its "full flame" state. No timeout; stopped the same way as PLAYING, with a long press (same 5 s fade-out) | Done, untested on hardware |
+| R2.0-3 | `NUM_PIXELS`/`USED_LEDS` raised from 263 to 272 (largest module seen so far), `getLedsForRing()` simplified to a flat 16/ring (272 = 17×16 exactly). One firmware image runs on modules with fewer physical LEDs — the NeoPixel chain simply doesn't deliver data past the last real LED, so a shorter module just has an incomplete outermost ring, nothing breaks | Done, untested on hardware |
+| R2.0-4 | Burn-up timeline halved proportionally: `FILL_DURATION_SEC` 10→5, `FULL_FLAME_END_SEC` 16→8, `FADE_END_SEC` 30→15, `BLEND_DURATION` 6→3. `TTL_START_PULSE_SEC`'s offset also scaled (1.0s→0.5s) to keep the inter-module trigger at the same relative point in the flame | Done, untested on hardware |
 
 **Nothing in Rev 2.0 has been verified on hardware yet.**
 
@@ -39,7 +42,7 @@ The previous contents of this branch (the pre-production sketches `Led_strip_lav
 
 | Measure | Type | Risk | Interferes with code | Status |
 |---|---|---|---|---|
-| Debounce on falling edge | SW | None | Minimal change, one line | Done in Rev 2.0 (R2.0-1) |
+| Debounce on both edges | SW | None | Minimal change | Done in Rev 2.0 (R2.0-1) |
 | RC filter 100 Ω + 100 nF on TTL_IN_PIN | HW | None | No | Open |
 | External 10 kΩ pullup to 3.3 V | HW | None | No | Open |
 
@@ -72,7 +75,7 @@ In **Sketch → Include Library → Manage Libraries…**:
 
 **Board:** M5Stack Atom Lite (ESP32‑PICO‑D4)
 
-**LED strip:** 263 addressable RGB LEDs arranged in 17 rings (rings 0–7: 16 LEDs each, rings 8–16: 15 LEDs each)
+**LED strip:** up to 272 addressable RGB LEDs arranged in 17 rings of 16 LEDs each (`NUM_PIXELS`/`USED_LEDS` = 272, sized for the largest module seen). Physical modules with fewer LEDs (e.g. 263) run the same firmware unmodified — the chain protocol means data addressed past the last real LED simply has no effect, so a shorter module just has an incomplete outermost ring.
 
 | Signal | GPIO | Note |
 |---|---|---|
@@ -88,12 +91,14 @@ In **Sketch → Include Library → Manage Libraries…**:
 
 ## Ignite button
 
-| Action | Duration | Result |
+| Action | From mode | Result |
 |---|---|---|
-| Short press | < 1000 ms | START sequence (from OFF or DONE only) |
-| Long press | ≥ 1000 ms | STOP sequence (from PLAYING only) |
+| Short press (< 1000 ms) | OFF / DONE | START sequence (normal red/orange burn-up) |
+| Long press (≥ 1000 ms) | PLAYING | STOP — 5 s fade-out, then DONE |
+| Long press (≥ 1000 ms) | OFF / DONE | **DEMO** — instant purple "full flame" on all modules, no timeout |
+| Long press (≥ 1000 ms) | DEMO | Stop DEMO — same 5 s fade-out, then DONE |
 
-Debounce between button events: 500 ms. STOP triggers a 5-second fade-out before the system enters DONE state.
+Any press while `FADING` or while already in the target mode has no effect. Debounce between button events: 500 ms. Long-press actions fire immediately once the hold crosses 1000 ms (not on release).
 
 ---
 
@@ -135,12 +140,14 @@ The strip is treated as a cylinder with 17 rings. `FLAME_XY(ring, col)` maps (ri
 
 | Phase | Time | Description |
 |---|---|---|
-| Fill | 0 – 10 s | Fire fills the cylinder ring by ring, bottom to top |
-| Full flame | 10 – 16 s | Full fire effect, COOLING=40, SPARKING=120 |
-| Color shift | 16 – 30 s | Color blends from dark red → orange via smoothstep |
-| Blend to glow | 30 – 36 s | Fire algorithm fades out, lava flicker fades in |
-| Lava glow | 36 s – | Steady lava glow with sine-based brightness pulsing |
+| Fill | 0 – 5 s | Fire fills the cylinder ring by ring, bottom to top |
+| Full flame | 5 – 8 s | Full fire effect, COOLING=40, SPARKING=120 |
+| Color shift | 8 – 15 s | Color blends from dark red → orange via smoothstep |
+| Blend to glow | 15 – 18 s | Fire algorithm fades out, lava flicker fades in |
+| Lava glow | 18 s – | Steady lava glow with sine-based brightness pulsing |
 | All off | 300 s | Sequence stops automatically |
+
+**DEMO mode** (long press from OFF/DONE) skips this whole timeline: it locks into the "full flame" parameters permanently, recolored purple (`#9255C0`), with no color/glow progression and no auto-off — it stays until stopped with another long press.
 
 ### Modifications from Fire2012
 

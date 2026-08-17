@@ -6,7 +6,21 @@
 //  på main i august 2026 - skal ikke endres).
 //
 //  Endringer fra rev_6:
-//   - Debounce på fallende flanke for TTL IN (se ENDRING R2.0-1)
+//   - Debounce på begge flanker for TTL IN, ikke bare fallende. Tidligere
+//     var stigende flanke (pulsslutt) ubeskyttet, så en støy-glitch rett
+//     etter en godtatt fallende flanke kunne avslutte målingen for tidlig
+//     (se ENDRING R2.0-1)
+//   - Ny DEMO-modus: langt trykk fra OFF/DONE gir lilla "full flamme"
+//     på alle moduler uten sekvensiell antenning og uten timeout.
+//     Stoppes med langt trykk, samme fade som PLAYING (se ENDRING R2.0-2)
+//   - NUM_PIXELS/USED_LEDS økt fra 263 til 272 (største kjente modul).
+//     Samme fastkodede 17-rings mønster brukes på alle moduler; strippen
+//     er en kjede så data til fysisk ikke-eksisterende LEDs utenfor en
+//     kortere modul har ingen effekt (se ENDRING R2.0-3)
+//   - Brenn opp-forløpet (antenning -> full flamme -> glød) halvert
+//     proporsjonalt: FILL_DURATION_SEC 10->5, FULL_FLAME_END_SEC 16->8,
+//     FADE_END_SEC 30->15, BLEND_DURATION 6->3, og TTL_START_PULSE_SEC-
+//     offset 1.0s->0.5s for å holde samme relative posisjon (se ENDRING R2.0-4)
 // =====================================================
 
 #define FW_VERSION "RS700_Demo_Rev2_0"
@@ -20,7 +34,7 @@
 // =====================================================
 
 #define PIN        22
-#define NUM_PIXELS 263
+#define NUM_PIXELS 272
 #define BRIGHTNESS 200
 
 Adafruit_NeoPixel strip(NUM_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
@@ -29,12 +43,12 @@ Adafruit_NeoPixel strip(NUM_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 #define TTL_IN_PIN  21
 
 const uint8_t  RINGS     = 17;
-const uint16_t USED_LEDS = 263;
+const uint16_t USED_LEDS = 272;
 
-const float FILL_DURATION_SEC  = 10.0f;
-const float FULL_FLAME_END_SEC = 16.0f;
-const float FADE_END_SEC       = 30.0f;
-const float BLEND_DURATION     = 6.0f;
+const float FILL_DURATION_SEC  = 5.0f;
+const float FULL_FLAME_END_SEC = 8.0f;
+const float FADE_END_SEC       = 15.0f;
+const float BLEND_DURATION     = 3.0f;
 const float ALL_OFF_TIME_SEC   = 300.0f;
 const float FADE_OUT_TIME_SEC  = 5.0f;
 
@@ -44,14 +58,14 @@ const uint32_t BTN_DEBOUNCE_MS     = 500;
 const uint32_t ON_MAX_MS           = 1000;
 const uint32_t TTL_START_PULSE_MS  = 500;
 const uint32_t TTL_STOP_PULSE_MS   = 2000;
-const float    TTL_START_PULSE_SEC = FILL_DURATION_SEC + 1.0f;
+const float    TTL_START_PULSE_SEC = FILL_DURATION_SEC + 0.5f;
 
 // =====================================================
 //  GEOMETRI
 // =====================================================
 
 uint8_t getLedsForRing(uint8_t ring) {
-  return (ring < 8) ? 16 : 15;
+  return 16;  // 272 / RINGS(17) = 16 jevnt, ingen rest (ENDRING R2.0-3)
 }
 
 uint16_t ringBase(uint8_t ring) {
@@ -74,6 +88,9 @@ const uint8_t DARKRED_R      = 120, DARKRED_G      =  0, DARKRED_B      = 0;
 const uint8_t MIDRED_R       = 220, MIDRED_G       = 20, MIDRED_B       = 0;
 const uint8_t DARKORANGE_R   = 255, DARKORANGE_G   = 85, DARKORANGE_B   = 0;
 
+// DEMO-modus: Interwells lyseste lilla, HEX #9255C0 (ENDRING R2.0-2)
+const uint8_t DEMOPURPLE_R   = 146, DEMOPURPLE_G   = 85, DEMOPURPLE_B   = 192;
+
 #define COOLING  40
 #define SPARKING 120
 
@@ -81,7 +98,7 @@ const uint8_t DARKORANGE_R   = 255, DARKORANGE_G   = 85, DARKORANGE_B   = 0;
 //  STATE
 // =====================================================
 
-enum Mode { OFF, PLAYING, FADING, DONE };
+enum Mode { OFF, PLAYING, FADING, DONE, DEMO, DEMO_FADING };
 Mode mode = OFF;
 
 uint32_t startMillis   = 0;
@@ -274,6 +291,23 @@ void stopSequence() {
   ttlMeasuredActive = false;
 }
 
+// DEMO-modus: full lilla flamme på alle moduler, ingen sekvensiell
+// antenning, ingen timeout. Kun knappestyrt (se ENDRING R2.0-2)
+void startDemoSequence() {
+  lastFrameMs = millis();
+  mode        = DEMO;
+
+  clearHeat();
+  randomizeOffsets();
+}
+
+void stopDemoSequence() {
+  if (mode != DEMO) return;
+
+  fadeStartMs = millis();
+  mode        = DEMO_FADING;
+}
+
 // =====================================================
 //  ISR
 // =====================================================
@@ -332,6 +366,8 @@ void loop() {
       lastButtonEventMs = now;
       buttonPressed     = false;
       if (mode == PLAYING) stopSequence();
+      else if (mode == DEMO) stopDemoSequence();                    // ENDRING R2.0-2
+      else if (mode == OFF || mode == DONE) startDemoSequence();    // ENDRING R2.0-2
     }
   }
 
@@ -358,25 +394,28 @@ void loop() {
   interrupts();
 
   if (edge) {
-    if (!level) {
-      // FALLING: aktiv puls starter
-      if (now - lastTtlHandledEventMs >= TTL_DEBOUNCE_MS) {
-        ttlMeasuredActive     = true;
-        ttlActiveStartMs      = now;
-        lastTtlHandledEventMs = now;  // ENDRING R2.0-1: debounce også på fallende flanke
-      }
-    } else {
-      // RISING: aktiv puls slutter
-      if (ttlMeasuredActive) {
-        uint32_t width = now - ttlActiveStartMs;
-        ttlMeasuredActive     = false;
-        lastTtlHandledEventMs = now;
+    // ENDRING R2.0-1: debounce på begge flanker. Tidsstempelet oppdateres
+    // for enhver flanke (også støy som avvises), slik at en flanke kun
+    // godtas som reell når det har vært stille i TTL_DEBOUNCE_MS siden
+    // forrige flanke av noe slag.
+    bool settled = (now - lastTtlHandledEventMs >= TTL_DEBOUNCE_MS);
+    lastTtlHandledEventMs = now;
 
-        if (width < ON_MAX_MS) {
-          if (mode == OFF || mode == DONE) startSequence();
-        }
+    if (settled) {
+      if (!level) {
+        // FALLING: aktiv puls starter
+        ttlMeasuredActive = true;
+        ttlActiveStartMs  = now;
       } else {
-        lastTtlHandledEventMs = now;
+        // RISING: aktiv puls slutter
+        if (ttlMeasuredActive) {
+          uint32_t width = now - ttlActiveStartMs;
+          ttlMeasuredActive = false;
+
+          if (width < ON_MAX_MS) {
+            if (mode == OFF || mode == DONE) startSequence();
+          }
+        }
       }
     }
   }
@@ -410,13 +449,15 @@ void loop() {
   if ((now - lastFrameMs) < FRAME_MS) return;
   lastFrameMs = now;
 
-  if (mode != PLAYING && mode != FADING) return;
+  if (mode != PLAYING && mode != FADING && mode != DEMO && mode != DEMO_FADING) return;
+
+  bool demoActive = (mode == DEMO || mode == DEMO_FADING);          // ENDRING R2.0-2
 
   // -----------------------------------------------
   // FADING
   // -----------------------------------------------
   float fadeScale = 1.0f;
-  if (mode == FADING) {
+  if (mode == FADING || mode == DEMO_FADING) {
     float p = (now - fadeStartMs) / (FADE_OUT_TIME_SEC * 1000.0f);
     if (p > 1.0f) p = 1.0f;
     fadeScale = 1.0f - smoothstep(0.0f, 1.0f, p);
@@ -449,44 +490,56 @@ void loop() {
   // ANIMASJON
   // -----------------------------------------------
   uint8_t baseR, baseG, baseB;
-  baseColorForTime(t, baseR, baseG, baseB);
-
   uint8_t currentSparking, currentCooling, globalMaxRing;
   bool    useFillMask;
   float   glowBlend;
 
-  if (t < FILL_DURATION_SEC) {
-    float p         = t / FILL_DURATION_SEC;
-    globalMaxRing   = (uint8_t)(p * (RINGS - 1) + 0.5f);
-    currentCooling  = (uint8_t)(70 - 30 * p);
-    currentSparking = (uint8_t)(80 + 80 * p);
-    useFillMask     = true;
-    glowBlend       = 0.0f;
-  } else if (t < FULL_FLAME_END_SEC) {
+  if (demoActive) {
+    // ENDRING R2.0-2: fast "full flamme"-tilstand, lilla, ingen faseoverganger
+    baseR           = DEMOPURPLE_R;
+    baseG           = DEMOPURPLE_G;
+    baseB           = DEMOPURPLE_B;
     globalMaxRing   = RINGS - 1;
     currentCooling  = COOLING;
     currentSparking = SPARKING;
     useFillMask     = false;
     glowBlend       = 0.0f;
-  } else if (t < FADE_END_SEC) {
-    globalMaxRing   = RINGS - 1;
-    currentCooling  = COOLING;
-    currentSparking = SPARKING;
-    useFillMask     = false;
-    glowBlend       = 0.0f;
-  } else if (t < FADE_END_SEC + BLEND_DURATION) {
-    float p         = (t - FADE_END_SEC) / BLEND_DURATION;
-    globalMaxRing   = RINGS - 1;
-    currentCooling  = COOLING;
-    currentSparking = (uint8_t)(SPARKING * (1.0f - p));
-    useFillMask     = false;
-    glowBlend       = smoothstep(0.0f, 1.0f, p);
   } else {
-    globalMaxRing   = RINGS - 1;
-    currentCooling  = 255;
-    currentSparking = 0;
-    useFillMask     = false;
-    glowBlend       = 1.0f;
+    baseColorForTime(t, baseR, baseG, baseB);
+
+    if (t < FILL_DURATION_SEC) {
+      float p         = t / FILL_DURATION_SEC;
+      globalMaxRing   = (uint8_t)(p * (RINGS - 1) + 0.5f);
+      currentCooling  = (uint8_t)(70 - 30 * p);
+      currentSparking = (uint8_t)(80 + 80 * p);
+      useFillMask     = true;
+      glowBlend       = 0.0f;
+    } else if (t < FULL_FLAME_END_SEC) {
+      globalMaxRing   = RINGS - 1;
+      currentCooling  = COOLING;
+      currentSparking = SPARKING;
+      useFillMask     = false;
+      glowBlend       = 0.0f;
+    } else if (t < FADE_END_SEC) {
+      globalMaxRing   = RINGS - 1;
+      currentCooling  = COOLING;
+      currentSparking = SPARKING;
+      useFillMask     = false;
+      glowBlend       = 0.0f;
+    } else if (t < FADE_END_SEC + BLEND_DURATION) {
+      float p         = (t - FADE_END_SEC) / BLEND_DURATION;
+      globalMaxRing   = RINGS - 1;
+      currentCooling  = COOLING;
+      currentSparking = (uint8_t)(SPARKING * (1.0f - p));
+      useFillMask     = false;
+      glowBlend       = smoothstep(0.0f, 1.0f, p);
+    } else {
+      globalMaxRing   = RINGS - 1;
+      currentCooling  = 255;
+      currentSparking = 0;
+      useFillMask     = false;
+      glowBlend       = 1.0f;
+    }
   }
 
   if (glowBlend < 1.0f) {
