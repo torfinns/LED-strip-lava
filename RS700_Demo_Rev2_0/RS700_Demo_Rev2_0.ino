@@ -67,8 +67,13 @@
 #define BRIGHTNESS 200
 
 // DEMO-modus: Interwells lyseste lilla, HEX #9255C0 (ENDRING R2.0-2)
-const uint8_t DEMOPURPLE_R   = 146, DEMOPURPLE_G   = 85, DEMOPURPLE_B   = 192;
-const float DEMO_BRIGHTNESS_SCALE = 0.7f; // 70%
+//const uint8_t DEMOPURPLE_R   = 146, DEMOPURPLE_G   = 85, DEMOPURPLE_B   = 192;
+//const uint8_t DEMOPURPLE_R   = 110, DEMOPURPLE_G   = 64, DEMOPURPLE_B   = 144;  // for HEX #6E4090 (Litt mørkere)
+//const uint8_t DEMOPURPLE_R   = 74,  DEMOPURPLE_G   = 43, DEMOPURPLE_B   = 96;   // for HEX #4A2B60 (Mye mørkere)
+//const uint8_t DEMOPURPLE_R   = 37,  DEMOPURPLE_G   = 21, DEMOPURPLE_B   = 48;   // for HEX #251530 (Veldig mørk)
+//const uint8_t DEMOPURPLE_R   = 90,  DEMOPURPLE_G   = 20, DEMOPURPLE_B   = 210;  // for HEX #5A14D2 (Mer blå/lilla, mindre grønt)
+const uint8_t DEMOPURPLE_R   = 140, DEMOPURPLE_G   = 15, DEMOPURPLE_B   = 210;  // for HEX #8C0FD2 (Mer rødt inn - leser som lilla, ikke blått)
+const float DEMO_BRIGHTNESS_SCALE = 1.0f; // 100% - ingen ekstra demping utover selve fargen
 
 Adafruit_NeoPixel strip(NUM_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
