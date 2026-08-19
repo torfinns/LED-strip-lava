@@ -1,5 +1,5 @@
 // =====================================================
-//  RS700_Demo_Rev2_0
+//  RS700_Demo
 //
 //  Utviklingsversjon, branch: Experiment
 //  Utgangspunkt: RS700_Demo_rev_6 (produksjonsversjon 1, fredet
@@ -69,9 +69,14 @@
 //     for å hoppe rett til full flamme. Sammen med ~1s/hopp-kaskaden
 //     mellom modulene (R2.1-1) gir dette en jevnere bølge nedover kjeden
 //     (se ENDRING R2.1-2)
+//
+//  ENDRING R2.1-3: sketchen omdøpt fra RS700_Demo_Rev2_0 til RS700_Demo.
+//  Versjonsnummer i filnavn er en anti-pattern når git allerede sporer
+//  historikk - se git-tags (v2.0, osv.) for versjonshistorikk fremover,
+//  ikke mappenavnet.
 // =====================================================
 
-#define FW_VERSION "RS700_Demo_Rev2_0"
+#define FW_VERSION "RS700_Demo"
 
 #include <M5Atom.h>
 #include <Adafruit_NeoPixel.h>
