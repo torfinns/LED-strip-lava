@@ -1,79 +1,13 @@
 // =====================================================
 //  RS700_Demo
 //
-//  Utviklingsversjon, branch: Experiment
+//  Produksjonsversjon (Rev 2.1), branch: main
 //  Utgangspunkt: RS700_Demo_rev_6 (produksjonsversjon 1, fredet
 //  på main i august 2026 - skal ikke endres).
 //
-//  Endringer fra rev_6:
-//   - Debounce på begge flanker for TTL IN, ikke bare fallende. Tidligere
-//     var stigende flanke (pulsslutt) ubeskyttet, så en støy-glitch rett
-//     etter en godtatt fallende flanke kunne avslutte målingen for tidlig
-//     (se ENDRING R2.0-1)
-//   - Ny DEMO-modus: langt trykk fra OFF/DONE gir lilla "full flamme"
-//     på alle moduler uten sekvensiell antenning og uten timeout.
-//     Stoppes med langt trykk, samme fade som PLAYING (se ENDRING R2.0-2)
-//   - NUM_PIXELS/USED_LEDS økt fra 263 til 272 (største kjente modul).
-//     Samme fastkodede 17-rings mønster brukes på alle moduler; strippen
-//     er en kjede så data til fysisk ikke-eksisterende LEDs utenfor en
-//     kortere modul har ingen effekt (se ENDRING R2.0-3)
-//   - Brenn opp-forløpet (antenning -> full flamme -> glød) halvert
-//     proporsjonalt: FILL_DURATION_SEC 10->5, FULL_FLAME_END_SEC 16->8,
-//     FADE_END_SEC 30->15, BLEND_DURATION 6->3, og TTL_START_PULSE_SEC-
-//     offset 1.0s->0.5s for å holde samme relative posisjon (se ENDRING R2.0-4)
-//   - Fikset DEMO-fargen: heatToColor() er tunet for ild (blått ~0), og ga
-//     mørk/feil farge på lilla siden blått er hovedkanalen der. Ny
-//     heatToColorUniform() skalerer alle kanaler proporsjonalt, brukt kun
-//     for DEMO (se ENDRING R2.0-5)
-//   - Fikset langt-trykk-mekanikken: knappen ble re-armet basert kun på tid
-//     siden forrige hendelse (BTN_DEBOUNCE_MS), ikke på om et faktisk fysisk
-//     slipp hadde skjedd. Et sammenhengende trykk på over ca. 1.5s kunne
-//     dermed trigge langt-trykk-handlingen flere ganger på rad (f.eks. starte
-//     DEMO og umiddelbart stoppe den igjen) uten at knappen noensinne ble
-//     sluppet. Handlingen (start/stopp/DEMO) trigges fortsatt idet holdetiden
-//     krysser ON_MAX_MS mens knappen holdes nede, men buttonLongActionFired
-//     hindrer nå re-triggering før et faktisk slipp (se ENDRING R2.0-6)
-//   - lastButtonEventMs/lastTtlHandledEventMs initialisert til -debounce-tid
-//     (unsigned underflow, tilsiktet) i stedet for 0, slik at et trykk/puls
-//     i de aller første millisekundene etter boot ikke blir stille avvist
-//     av debounce-sjekken (se ENDRING R2.0-7)
-//   - DEMO-modus (start/stopp ved langt trykk) var kun koblet til M5Atom sin
-//     innebygde knapp (GPIO39), ikke til TTL IN. På moduler der den fysiske
-//     knappen faktisk er koblet via TTL IN, nådde DEMO-triggeren aldri fram.
-//     Samme langt-trykk-logikk for DEMO er nå lagt til TTL IN-håndteringen
-//     (se ENDRING R2.0-8)
-//   - DEMO propageres nå videre til neste modul i TTL-kjeden med en gang
-//     den starter/stopper (samme mønster som beginStartPulseOut()/
-//     beginLongPulseOut() allerede brukte for PLAYING/STOPP), slik at hele
-//     kjeden går i DEMO sammen, ikke bare modulen som mottok trykket
-//     (se ENDRING R2.0-9)
-//   - DEMO kjørte på full stripe-lysstyrke uten demping og ble for kraftig.
-//     Ny DEMO_BRIGHTNESS_SCALE demper DEMO spesifikt, uavhengig av
-//     glød-pulseringen i vanlig modus (se ENDRING R2.0-10)
-//   - DEMO-fargen tunet direkte på maskinvare gjennom flere runder, landet
-//     på #8C0FD2 ved DEMO_BRIGHTNESS_SCALE=1.0 (se ENDRING R2.0-11)
-//
-//  Rev 2.1:
-//   - Fikset feil forplantning av DEMO nedover i TTL-kjeden: R2.0-9 sendte
-//     en KORT puls (beginStartPulseOut(), 500ms) for å propagere DEMO-
-//     start, men mottakermodulen tolker enhver puls under 1000ms som
-//     "kort puls -> start normal rød sekvens" - den vet ingenting om at
-//     senderen var i DEMO. Derfor endte modul 2-4 i vanlig PLAYING i
-//     stedet for DEMO når kjeden ble trigget fra modul 1. Fikset ved å la
-//     startDemoSequence() bruke den lange pulsen (beginLongPulseOut(),
-//     omdøpt fra beginStopPulseOut()) i stedet - mottakerens eksisterende
-//     "lang puls fra OFF/DONE -> startDemoSequence()"-gren (R2.0-8)
-//     trigges da riktig hele veien ned kjeden (se ENDRING R2.1-1)
-//   - DEMO fyller nå én modul over DEMO_FILL_DURATION_SEC (1,5s), samme
-//     fyllingsmekanikk som normal antenning bare mye raskere, i stedet
-//     for å hoppe rett til full flamme. Sammen med ~1s/hopp-kaskaden
-//     mellom modulene (R2.1-1) gir dette en jevnere bølge nedover kjeden
-//     (se ENDRING R2.1-2)
-//
-//  ENDRING R2.1-3: sketchen omdøpt fra RS700_Demo_Rev2_0 til RS700_Demo.
-//  Versjonsnummer i filnavn er en anti-pattern når git allerede sporer
-//  historikk - se git-tags (v2.0, osv.) for versjonshistorikk fremover,
-//  ikke mappenavnet.
+//  Full endringshistorikk (R2.0-1 t.o.m. R2.1-6) er flyttet til bunnen
+//  av denne filen (CHANGELOG-kommentaren etter siste "}"), for å holde
+//  toppen av filen kort. Se også README.md "Changes in Rev 2.0/2.1".
 // =====================================================
 
 #define FW_VERSION "RS700_Demo"
@@ -103,6 +37,11 @@ const float DEMO_BRIGHTNESS_SCALE = 1.0f; // 100% - ingen ekstra demping utover 
 // å hoppe rett til full flamme. Sammen med ~1s/hopp-kaskaden mellom
 // modulene (R2.1-1) gir det en jevnere bølge nedover kjeden.
 const float DEMO_FILL_DURATION_SEC = 1.5f;
+
+// ENDRING R2.1-5: propagering av DEMO-start til neste modul utsettes med
+// denne tiden i stedet for å skje momentant - se ENDRING R2.1-5 i
+// changelog-header for begrunnelse.
+const float DEMO_PROPAGATE_DELAY_SEC = 0.5f;
 
 Adafruit_NeoPixel strip(NUM_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
@@ -399,17 +338,25 @@ void startDemoSequence() {
   // puls (>=1000ms) trigger derimot mottakerens eksisterende
   // "OFF/DONE -> startDemoSequence()"-gren (R2.0-8), som er nøyaktig
   // det vi vil skal skje nedover i kjeden.
+  // ENDRING R2.1-5: pulsen sendes ikke lenger momentant her, men utsatt
+  // DEMO_PROPAGATE_DELAY_SEC inn i fyllingsfasen (se loop()) - se
+  // ENDRING R2.1-5 i changelog-header for begrunnelse.
   ttlStartPulseTriggered = false;
   ttlStartPulseActive    = false;
   ttlLongPulseTriggered  = false;
   ttlLongPulseActive     = false;
   digitalWrite(TTL_OUT_PIN, HIGH);  // hvile HIGH
-  beginLongPulseOut();
 }
 
 void stopDemoSequence() {
   if (mode != DEMO) return;
 
+  // ENDRING R2.1-6: ttlLongPulseTriggered ma nullstilles for a kunne sende
+  // denne pulsen - den ble allerede satt til true av start-propageringen
+  // over, og uten reset her blokkerer beginLongPulseOut() sin egen guard
+  // stopp-propageringen stille, sa kun denne modulen sluk og resten av
+  // kjeden ble hengende i DEMO. Se ENDRING R2.1-6 i changelog-header.
+  ttlLongPulseTriggered = false;
   beginLongPulseOut();  // ENDRING R2.0-9: propager stopp til neste modul
 
   fadeStartMs = millis();
@@ -607,6 +554,18 @@ void loop() {
     }
   }
 
+  // ENDRING R2.1-5: DEMO-start propageres til neste modul først
+  // DEMO_PROPAGATE_DELAY_SEC inn i fyllingsfasen, ikke momentant - ellers
+  // rekker nabomodulen a starte sin egen fylling for denne modulen i det
+  // hele tatt er kommet i gang, siden en lang puls uansett trenger
+  // >=1000ms for a bli gjenkjent nedstrøms.
+  if (mode == DEMO) {
+    float tDemoPulse = (now - demoStartMillis) / 1000.0f;
+    if (!ttlLongPulseTriggered && tDemoPulse >= DEMO_PROPAGATE_DELAY_SEC) {
+      beginLongPulseOut();
+    }
+  }
+
   // -----------------------------------------------
   // ANIMASJON
   // -----------------------------------------------
@@ -719,7 +678,9 @@ void loop() {
 
         color = (ring > (uint8_t)colMax)
           ? 0
-          : heatToColor(heat[fc][ring], baseR, baseG, baseB);
+          : (demoActive
+               ? heatToColorUniform(heat[fc][ring], baseR, baseG, baseB)  // ENDRING R2.1-4
+               : heatToColor(heat[fc][ring], baseR, baseG, baseB));
       } else if (glowBlend > 0.0f) {
         uint32_t flameColor = heatToColor(heat[fc][ring], baseR, baseG, baseB);
         uint32_t glowColor  = lavaFlicker(baseR, baseG, baseB, ringPos, now, idx);
@@ -749,3 +710,108 @@ void loop() {
 
   strip.show();
 }
+
+// =====================================================
+//  CHANGELOG - full endringshistorikk fra RS700_Demo_rev_6
+//  (flyttet hit fra filhodet for å holde toppen av filen kort)
+// =====================================================
+//
+//  Endringer fra rev_6:
+//   - Debounce på begge flanker for TTL IN, ikke bare fallende. Tidligere
+//     var stigende flanke (pulsslutt) ubeskyttet, så en støy-glitch rett
+//     etter en godtatt fallende flanke kunne avslutte målingen for tidlig
+//     (se ENDRING R2.0-1)
+//   - Ny DEMO-modus: langt trykk fra OFF/DONE gir lilla "full flamme"
+//     på alle moduler uten sekvensiell antenning og uten timeout.
+//     Stoppes med langt trykk, samme fade som PLAYING (se ENDRING R2.0-2)
+//   - NUM_PIXELS/USED_LEDS økt fra 263 til 272 (største kjente modul).
+//     Samme fastkodede 17-rings mønster brukes på alle moduler; strippen
+//     er en kjede så data til fysisk ikke-eksisterende LEDs utenfor en
+//     kortere modul har ingen effekt (se ENDRING R2.0-3)
+//   - Brenn opp-forløpet (antenning -> full flamme -> glød) halvert
+//     proporsjonalt: FILL_DURATION_SEC 10->5, FULL_FLAME_END_SEC 16->8,
+//     FADE_END_SEC 30->15, BLEND_DURATION 6->3, og TTL_START_PULSE_SEC-
+//     offset 1.0s->0.5s for å holde samme relative posisjon (se ENDRING R2.0-4)
+//   - Fikset DEMO-fargen: heatToColor() er tunet for ild (blått ~0), og ga
+//     mørk/feil farge på lilla siden blått er hovedkanalen der. Ny
+//     heatToColorUniform() skalerer alle kanaler proporsjonalt, brukt kun
+//     for DEMO (se ENDRING R2.0-5)
+//   - Fikset langt-trykk-mekanikken: knappen ble re-armet basert kun på tid
+//     siden forrige hendelse (BTN_DEBOUNCE_MS), ikke på om et faktisk fysisk
+//     slipp hadde skjedd. Et sammenhengende trykk på over ca. 1.5s kunne
+//     dermed trigge langt-trykk-handlingen flere ganger på rad (f.eks. starte
+//     DEMO og umiddelbart stoppe den igjen) uten at knappen noensinne ble
+//     sluppet. Handlingen (start/stopp/DEMO) trigges fortsatt idet holdetiden
+//     krysser ON_MAX_MS mens knappen holdes nede, men buttonLongActionFired
+//     hindrer nå re-triggering før et faktisk slipp (se ENDRING R2.0-6)
+//   - lastButtonEventMs/lastTtlHandledEventMs initialisert til -debounce-tid
+//     (unsigned underflow, tilsiktet) i stedet for 0, slik at et trykk/puls
+//     i de aller første millisekundene etter boot ikke blir stille avvist
+//     av debounce-sjekken (se ENDRING R2.0-7)
+//   - DEMO-modus (start/stopp ved langt trykk) var kun koblet til M5Atom sin
+//     innebygde knapp (GPIO39), ikke til TTL IN. På moduler der den fysiske
+//     knappen faktisk er koblet via TTL IN, nådde DEMO-triggeren aldri fram.
+//     Samme langt-trykk-logikk for DEMO er nå lagt til TTL IN-håndteringen
+//     (se ENDRING R2.0-8)
+//   - DEMO propageres nå videre til neste modul i TTL-kjeden med en gang
+//     den starter/stopper (samme mønster som beginStartPulseOut()/
+//     beginLongPulseOut() allerede brukte for PLAYING/STOPP), slik at hele
+//     kjeden går i DEMO sammen, ikke bare modulen som mottok trykket
+//     (se ENDRING R2.0-9)
+//   - DEMO kjørte på full stripe-lysstyrke uten demping og ble for kraftig.
+//     Ny DEMO_BRIGHTNESS_SCALE demper DEMO spesifikt, uavhengig av
+//     glød-pulseringen i vanlig modus (se ENDRING R2.0-10)
+//   - DEMO-fargen tunet direkte på maskinvare gjennom flere runder, landet
+//     på #8C0FD2 ved DEMO_BRIGHTNESS_SCALE=1.0 (se ENDRING R2.0-11)
+//
+//  Rev 2.1:
+//   - Fikset feil forplantning av DEMO nedover i TTL-kjeden: R2.0-9 sendte
+//     en KORT puls (beginStartPulseOut(), 500ms) for å propagere DEMO-
+//     start, men mottakermodulen tolker enhver puls under 1000ms som
+//     "kort puls -> start normal rød sekvens" - den vet ingenting om at
+//     senderen var i DEMO. Derfor endte modul 2-4 i vanlig PLAYING i
+//     stedet for DEMO når kjeden ble trigget fra modul 1. Fikset ved å la
+//     startDemoSequence() bruke den lange pulsen (beginLongPulseOut(),
+//     omdøpt fra beginStopPulseOut()) i stedet - mottakerens eksisterende
+//     "lang puls fra OFF/DONE -> startDemoSequence()"-gren (R2.0-8)
+//     trigges da riktig hele veien ned kjeden (se ENDRING R2.1-1)
+//   - DEMO fyller nå én modul over DEMO_FILL_DURATION_SEC (1,5s), samme
+//     fyllingsmekanikk som normal antenning bare mye raskere, i stedet
+//     for å hoppe rett til full flamme. Sammen med ~1s/hopp-kaskaden
+//     mellom modulene (R2.1-1) gir dette en jevnere bølge nedover kjeden
+//     (se ENDRING R2.1-2)
+//
+//  ENDRING R2.1-3: sketchen omdøpt fra RS700_Demo_Rev2_0 til RS700_Demo.
+//  Versjonsnummer i filnavn er en anti-pattern når git allerede sporer
+//  historikk - se git-tags (v2.0, osv.) for versjonshistorikk fremover,
+//  ikke mappenavnet.
+//
+//  ENDRING R2.1-4: fyllingsfasen fra R2.1-2 (useFillMask-grenen) kalte
+//  heatToColor() ubetinget, samme ild-palette-bug som R2.0-5 fikset for
+//  steady-state DEMO men glemt her - ga rødlige LEDs mens DEMO "klatret"
+//  oppover en modul. Fikset ved samme demoActive-sjekk mot
+//  heatToColorUniform() som steady-state-grenen allerede bruker.
+//
+//  ENDRING R2.1-5: DEMO-start ble propagert til neste modul momentant i
+//  startDemoSequence(), sa nabomodulen rakk a starte sin egen fylling for
+//  denne modulen var kommet skikkelig i gang (fyllingen tar 1.5s, mens en
+//  lang puls trenger >=1000ms for a bli gjenkjent nedstroms - de to tallene
+//  var aldri koordinert). Fikset ved a utsette pulsen DEMO_PROPAGATE_DELAY_SEC
+//  (0.5s) inn i fyllingsfasen i stedet for a sende den umiddelbart, samme
+//  prinsipp som TTL_START_PULSE_SEC allerede gjor for normal antenning.
+//
+//  ENDRING R2.1-6: a stoppe DEMO slukket kun modulen som mottok
+//  stopp-trykket, resten av kjeden ble hengende i DEMO - i motsetning til
+//  normal STOPP, som fungerte fint. Rotarsak: R2.1-1 samlet START-DEMO- og
+//  STOPP-DEMO-propagering pa samme ttlLongPulseTriggered-latch. Start-
+//  propageringen (R2.1-5) satte den til true; stopDemoSequence() nullstilte
+//  den aldri for sitt eget beginLongPulseOut()-kall, sa guarden i den
+//  funksjonen stille droppet stopp-pulsen. Normal PLAYING->STOPP rammes ikke
+//  siden START der bruker en helt annen latch (ttlStartPulseTriggered) enn
+//  STOPP (ttlLongPulseTriggered). Fikset ved a nullstille
+//  ttlLongPulseTriggered i stopDemoSequence() for pulsen sendes.
+//
+//  Rev 2.1 bekreftet fungerende på full 4-modul maskinvarekjede
+//  (2026-08-19): DEMO-kaskade, fyllingsfase, fyllingsfarge, kaskadetiming
+//  og stopp-propagering til alle moduler.
+// =====================================================
