@@ -44,12 +44,26 @@
 //     (se ENDRING R2.0-8)
 //   - DEMO propageres nå videre til neste modul i TTL-kjeden med en gang
 //     den starter/stopper (samme mønster som beginStartPulseOut()/
-//     beginStopPulseOut() allerede brukte for PLAYING/STOPP), slik at hele
+//     beginLongPulseOut() allerede brukte for PLAYING/STOPP), slik at hele
 //     kjeden går i DEMO sammen, ikke bare modulen som mottok trykket
 //     (se ENDRING R2.0-9)
 //   - DEMO kjørte på full stripe-lysstyrke uten demping og ble for kraftig.
-//     Ny DEMO_BRIGHTNESS_SCALE (0.7) demper DEMO spesifikt, uavhengig av
+//     Ny DEMO_BRIGHTNESS_SCALE demper DEMO spesifikt, uavhengig av
 //     glød-pulseringen i vanlig modus (se ENDRING R2.0-10)
+//   - DEMO-fargen tunet direkte på maskinvare gjennom flere runder, landet
+//     på #8C0FD2 ved DEMO_BRIGHTNESS_SCALE=1.0 (se ENDRING R2.0-11)
+//
+//  Rev 2.1:
+//   - Fikset feil forplantning av DEMO nedover i TTL-kjeden: R2.0-9 sendte
+//     en KORT puls (beginStartPulseOut(), 500ms) for å propagere DEMO-
+//     start, men mottakermodulen tolker enhver puls under 1000ms som
+//     "kort puls -> start normal rød sekvens" - den vet ingenting om at
+//     senderen var i DEMO. Derfor endte modul 2-4 i vanlig PLAYING i
+//     stedet for DEMO når kjeden ble trigget fra modul 1. Fikset ved å la
+//     startDemoSequence() bruke den lange pulsen (beginLongPulseOut(),
+//     omdøpt fra beginStopPulseOut()) i stedet - mottakerens eksisterende
+//     "lang puls fra OFF/DONE -> startDemoSequence()"-gren (R2.0-8)
+//     trigges da riktig hele veien ned kjeden (se ENDRING R2.1-1)
 // =====================================================
 
 #define FW_VERSION "RS700_Demo_Rev2_0"
@@ -95,7 +109,8 @@ const uint32_t TTL_DEBOUNCE_MS     = 50;
 const uint32_t BTN_DEBOUNCE_MS     = 500;
 const uint32_t ON_MAX_MS           = 1000;
 const uint32_t TTL_START_PULSE_MS  = 500;
-const uint32_t TTL_STOP_PULSE_MS   = 2000;
+// ENDRING R2.1-1: "lang puls" - se kommentar ved ttlLongPulseTriggered.
+const uint32_t TTL_LONG_PULSE_MS   = 2000;
 const float    TTL_START_PULSE_SEC = FILL_DURATION_SEC + 0.5f;
 
 // =====================================================
@@ -157,9 +172,14 @@ bool     ttlStartPulseTriggered = false;
 bool     ttlStartPulseActive    = false;
 uint32_t ttlStartPulseStartMs   = 0;
 
-bool     ttlStopPulseTriggered  = false;
-bool     ttlStopPulseActive     = false;
-uint32_t ttlStopPulseStartMs    = 0;
+// ENDRING R2.1-1: "lang puls" (ikke "stopp-puls") - denne pulsen brukes til
+// å propagere STOPP, STOPP-DEMO og START-DEMO til neste modul. Betydningen
+// avgjøres utelukkende av mottakerens egen modus når pulsen ankommer
+// (PLAYING->stopp, DEMO->stopp-demo, OFF/DONE->start-demo) - senderen
+// trenger ikke vite hvilken av de tre det faktisk blir.
+bool     ttlLongPulseTriggered  = false;
+bool     ttlLongPulseActive     = false;
+uint32_t ttlLongPulseStartMs    = 0;
 
 // TTL IN (aktiv LOW)
 volatile bool ttlISRState   = true;
@@ -302,11 +322,14 @@ void beginStartPulseOut() {
   digitalWrite(TTL_OUT_PIN, LOW);   // aktiv LOW
 }
 
-void beginStopPulseOut() {
-  if (ttlStopPulseTriggered) return;
-  ttlStopPulseTriggered = true;
-  ttlStopPulseActive    = true;
-  ttlStopPulseStartMs   = millis();
+// ENDRING R2.1-1: generisk "lang puls" - brukes til å propagere STOPP,
+// STOPP-DEMO og START-DEMO. Betydningen avgjøres av mottakerens egen
+// modus når pulsen ankommer, ikke av hvorfor senderen sendte den.
+void beginLongPulseOut() {
+  if (ttlLongPulseTriggered) return;
+  ttlLongPulseTriggered = true;
+  ttlLongPulseActive    = true;
+  ttlLongPulseStartMs   = millis();
   digitalWrite(TTL_OUT_PIN, LOW);   // aktiv LOW
 }
 
@@ -325,8 +348,8 @@ void startSequence() {
 
   ttlStartPulseTriggered = false;
   ttlStartPulseActive    = false;
-  ttlStopPulseTriggered  = false;
-  ttlStopPulseActive     = false;
+  ttlLongPulseTriggered  = false;
+  ttlLongPulseActive     = false;
   digitalWrite(TTL_OUT_PIN, HIGH);  // hvile HIGH
 
   ttlMeasuredActive = false;
@@ -335,7 +358,7 @@ void startSequence() {
 void stopSequence() {
   if (mode != PLAYING) return;
 
-  beginStopPulseOut();
+  beginLongPulseOut();
 
   fadeStartMs = millis();
   mode        = FADING;
@@ -352,22 +375,25 @@ void startDemoSequence() {
   clearHeat();
   randomizeOffsets();
 
-  // ENDRING R2.0-9: propager til neste modul i TTL-kjeden med en gang.
-  // DEMO har ingen fyllingsfase å vente på (i motsetning til normal
-  // PLAYING, der pulsen først sendes når fyllingen er ferdig), så
-  // pulsen sendes umiddelbart her i stedet for i loop().
+  // ENDRING R2.1-1: propager med LANG puls, ikke kort. En kort puls
+  // (samme som normal START bruker) blir tolket av mottakeren som
+  // "start normal rød sekvens", siden mottakeren kun skiller kort/lang
+  // på pulsbredde - den vet ingenting om at senderen er i DEMO. En lang
+  // puls (>=1000ms) trigger derimot mottakerens eksisterende
+  // "OFF/DONE -> startDemoSequence()"-gren (R2.0-8), som er nøyaktig
+  // det vi vil skal skje nedover i kjeden.
   ttlStartPulseTriggered = false;
   ttlStartPulseActive    = false;
-  ttlStopPulseTriggered  = false;
-  ttlStopPulseActive     = false;
+  ttlLongPulseTriggered  = false;
+  ttlLongPulseActive     = false;
   digitalWrite(TTL_OUT_PIN, HIGH);  // hvile HIGH
-  beginStartPulseOut();
+  beginLongPulseOut();
 }
 
 void stopDemoSequence() {
   if (mode != DEMO) return;
 
-  beginStopPulseOut();  // ENDRING R2.0-9: propager stopp til neste modul
+  beginLongPulseOut();  // ENDRING R2.0-9: propager stopp til neste modul
 
   fadeStartMs = millis();
   mode        = DEMO_FADING;
@@ -516,8 +542,8 @@ void loop() {
     digitalWrite(TTL_OUT_PIN, HIGH);  // tilbake til hvile
   }
 
-  if (ttlStopPulseActive && (now - ttlStopPulseStartMs >= TTL_STOP_PULSE_MS)) {
-    ttlStopPulseActive = false;
+  if (ttlLongPulseActive && (now - ttlLongPulseStartMs >= TTL_LONG_PULSE_MS)) {
+    ttlLongPulseActive = false;
     digitalWrite(TTL_OUT_PIN, HIGH);  // tilbake til hvile
   }
 
