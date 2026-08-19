@@ -64,6 +64,11 @@
 //     omdøpt fra beginStopPulseOut()) i stedet - mottakerens eksisterende
 //     "lang puls fra OFF/DONE -> startDemoSequence()"-gren (R2.0-8)
 //     trigges da riktig hele veien ned kjeden (se ENDRING R2.1-1)
+//   - DEMO fyller nå én modul over DEMO_FILL_DURATION_SEC (1,5s), samme
+//     fyllingsmekanikk som normal antenning bare mye raskere, i stedet
+//     for å hoppe rett til full flamme. Sammen med ~1s/hopp-kaskaden
+//     mellom modulene (R2.1-1) gir dette en jevnere bølge nedover kjeden
+//     (se ENDRING R2.1-2)
 // =====================================================
 
 #define FW_VERSION "RS700_Demo_Rev2_0"
@@ -88,6 +93,11 @@
 //const uint8_t DEMOPURPLE_R   = 90,  DEMOPURPLE_G   = 20, DEMOPURPLE_B   = 210;  // for HEX #5A14D2 (Mer blå/lilla, mindre grønt)
 const uint8_t DEMOPURPLE_R   = 140, DEMOPURPLE_G   = 15, DEMOPURPLE_B   = 210;  // for HEX #8C0FD2 (Mer rødt inn - leser som lilla, ikke blått)
 const float DEMO_BRIGHTNESS_SCALE = 1.0f; // 100% - ingen ekstra demping utover selve fargen
+// ENDRING R2.1-2: DEMO fyller nå én modul over denne tiden (samme
+// fyllingsmekanikk som normal antenning, bare mye raskere), i stedet for
+// å hoppe rett til full flamme. Sammen med ~1s/hopp-kaskaden mellom
+// modulene (R2.1-1) gir det en jevnere bølge nedover kjeden.
+const float DEMO_FILL_DURATION_SEC = 1.5f;
 
 Adafruit_NeoPixel strip(NUM_PIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
@@ -151,9 +161,10 @@ const uint8_t DARKORANGE_R   = 255, DARKORANGE_G   = 85, DARKORANGE_B   = 0;
 enum Mode { OFF, PLAYING, FADING, DONE, DEMO, DEMO_FADING };
 Mode mode = OFF;
 
-uint32_t startMillis   = 0;
-uint32_t lastFrameMs   = 0;
-uint32_t fadeStartMs   = 0;
+uint32_t startMillis     = 0;
+uint32_t lastFrameMs     = 0;
+uint32_t fadeStartMs     = 0;
+uint32_t demoStartMillis = 0;  // ENDRING R2.1-2: for DEMO sin fyllingsfase
 
 // Knapp
 bool     buttonPressed        = false;
@@ -369,8 +380,9 @@ void stopSequence() {
 // DEMO-modus: full lilla flamme på alle moduler, ingen sekvensiell
 // antenning, ingen timeout (se ENDRING R2.0-2)
 void startDemoSequence() {
-  lastFrameMs = millis();
-  mode        = DEMO;
+  lastFrameMs   = millis();
+  demoStartMillis = lastFrameMs;  // ENDRING R2.1-2: for fyllingsfasen
+  mode          = DEMO;
 
   clearHeat();
   randomizeOffsets();
@@ -599,15 +611,31 @@ void loop() {
   float   glowBlend;
 
   if (demoActive) {
-    // ENDRING R2.0-2: fast "full flamme"-tilstand, lilla, ingen faseoverganger
-    baseR           = DEMOPURPLE_R;
-    baseG           = DEMOPURPLE_G;
-    baseB           = DEMOPURPLE_B;
-    globalMaxRing   = RINGS - 1;
-    currentCooling  = COOLING;
-    currentSparking = SPARKING;
-    useFillMask     = false;
-    glowBlend       = 0.0f;
+    baseR     = DEMOPURPLE_R;
+    baseG     = DEMOPURPLE_G;
+    baseB     = DEMOPURPLE_B;
+    glowBlend = 0.0f;
+
+    float tDemo = (now - demoStartMillis) / 1000.0f;
+    if (mode == DEMO && tDemo < DEMO_FILL_DURATION_SEC) {
+      // ENDRING R2.1-2: fyllingsfase - samme mekanikk som normal antenning,
+      // bare mye raskere. Sammen med kaskaden mellom modulene (R2.1-1)
+      // gir dette en jevnere bølge nedover kjeden i stedet for et
+      // stykkevis hopp fra mørkt til full flamme per modul.
+      float p         = tDemo / DEMO_FILL_DURATION_SEC;
+      globalMaxRing   = (uint8_t)(p * (RINGS - 1) + 0.5f);
+      currentCooling  = (uint8_t)(70 - 30 * p);
+      currentSparking = (uint8_t)(80 + 80 * p);
+      useFillMask     = true;
+    } else {
+      // ENDRING R2.0-2: fast "full flamme"-tilstand, ingen faseoverganger.
+      // Gjelder ogsa DEMO_FADING uansett tDemo, siden fade skal skje fra
+      // full flamme, ikke fra en delvis fylt tilstand.
+      globalMaxRing   = RINGS - 1;
+      currentCooling  = COOLING;
+      currentSparking = SPARKING;
+      useFillMask     = false;
+    }
   } else {
     baseColorForTime(t, baseR, baseG, baseB);
 
